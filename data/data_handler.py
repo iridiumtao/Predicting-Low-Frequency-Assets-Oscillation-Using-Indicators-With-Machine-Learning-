@@ -1,3 +1,18 @@
+import yfinance as yf
+import plotly.graph_objects as go
+import stockstats
+from stockstats import StockDataFrame
+import pandas_ta as ta
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+from sklearn.linear_model import LinearRegression
+
+from typing import List
+
 class DataHandler:
     """
     Handles fetching, preprocessing, and preparing data for modeling.
@@ -22,6 +37,7 @@ class DataHandler:
         return all_stock_data
 
     def create_linear_regression_indicator(self, stock_df:pd.DataFrame, correlated_asset_prices):
+        # todo: linear_regression_indicator
         model = LinearRegression()
         X = np.array(correlated_asset_prices).reshape(-1, 1)
         y = stock_df['Close'].values
@@ -92,6 +108,7 @@ class DataHandler:
         X = features_data.drop(target_column, axis=1)
         y = features_data[target_column]
 
+        # todo: random state is FIXED for now
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
         X_train_scaled = self.scaler.fit_transform(X_train)
