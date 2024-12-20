@@ -24,10 +24,11 @@ if __name__ == '__main__':
     # is_gpu_available()
 
     # Load Config
+    # todo: warning: if you want to change the date, you need to manually delete the cached file first
     config = Config(
-          start_date = "2023-05-21",
-          end_date = "2023-12-13",
-          prediction_date = "2023-12-22",
+          start_date = "2020-05-21",
+          end_date = "2024-12-13",
+          prediction_date = "2024-12-19",
           tickers = ["SPY", "QQQ"
                  ],
           tickers_for_prediction = ["AKFYE.IS", "EUPWR.IS", "YYLGD.IS", "BIMAS.IS", "GENIL.IS", "ODAS.IS", "ISMEN.IS", "ZOREN.IS", "CANTE.IS", "AHGAZ.IS"]
@@ -35,21 +36,21 @@ if __name__ == '__main__':
     # tickers = [symbol + ".IS" for symbol in config.tickers]
     # Initialize DataHandler
     data_handler = DataHandler(start_date=config.start_date, end_date=config.end_date, tickers=config.tickers)
-    #
-    # # Initialize Model
-    # model = Model(model_type='lstm', output_type='regression')
-    #
-    # # Initialize Trainer
-    # trainer = Trainer(data_handler=data_handler, model=model, model_type = 'lstm')
-    # trainer.train_and_evaluate_all(add_custom_indicator=True, target_type='regression', correlated_asset='SPY')
-    #
-    # #Initialize Predictor
-    # data_handler.tickers = config.tickers_for_prediction
-    # predictor = Predictor(data_handler=data_handler, model=model, model_type = 'lstm')
-    # predictor.predict_for_tickers(prediction_date=config.prediction_date, add_custom_indicator=True, correlated_asset='SPY')
-    #
-    # # Display Results
-    # display_results(trainer.results_df, trainer.top_10_results, predictor.prediction_results)
+
+    # Initialize Model
+    model = Model(model_type='lstm', output_type='regression')
+
+    # Initialize Trainer
+    trainer = Trainer(data_handler=data_handler, model=model, model_type = 'lstm')
+    trainer.train_and_evaluate_all(add_custom_indicator=False, target_type='regression', correlated_asset='SPY')
+
+    #Initialize Predictor
+    data_handler.tickers = config.tickers_for_prediction
+    predictor = Predictor(data_handler=data_handler, model=model, model_type = 'lstm')
+    predictor.predict_for_tickers(prediction_date=config.prediction_date, add_custom_indicator=False, correlated_asset='SPY')
+
+    # Display Results
+    display_results(trainer.results_df, trainer.top_10_results, predictor.prediction_results)
     #
     # # Initialize Report Generator
     # report_generator = ReportGenerator(trainer.top_10_results, trainer.results_df, predictor.prediction_results)

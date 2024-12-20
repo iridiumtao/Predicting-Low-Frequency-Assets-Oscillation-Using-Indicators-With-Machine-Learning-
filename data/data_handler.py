@@ -34,7 +34,8 @@ class DataHandler:
             file_path = os.path.join(self.data_dir, f'{ticker}.csv')
             if check_if_file_exists(file_path):
               print(f"Loading cached data for {ticker} from {file_path}")
-              all_stock_data[ticker] = load_data_from_csv(file_path)
+              # todo: warning: only loading 1000 rows for now
+              all_stock_data[ticker] = load_data_from_csv(file_path)[:1000]
             else:
                 try:
                     print(f"Downloading data for {ticker}")
@@ -70,7 +71,7 @@ class DataHandler:
         # Add custom indicator only if specified
         if add_custom_indicator:
             correlated_asset_data = yf.download(correlated_asset, start = self.start_date, end = self.end_date)
-            correlated_asset_prices = correlated_asset_data['Close'].values
+            correlated_asset_prices = correlated_asset_data['close'].values
             stock_df = self.create_linear_regression_indicator(stock_df, correlated_asset_prices)
         return stock_df
 
@@ -87,14 +88,15 @@ class DataHandler:
             target_type (str, optional): Choose between 'binary_classification' or 'regression'. Defaults to 'binary_classification'.
         """
         if target_type == 'binary_classification':
-           df['direction'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+           df['direction'] = (df['close'].shift(-1) > df['close']).astype(int)
            target_column = 'direction'
         elif target_type == 'regression':
-            df['target'] = df['Close'].shift(-1) - df['Close']
+            df['target'] = df['close'].shift(-1) - df['close']
             target_column = 'target'
         else:
             raise ValueError("Invalid target type.")
-
+        df = df.dropna(subset = [target_column]) # Remove any data with NaN values at the target variable.
+        print(df.head(10))
         return df, target_column
 
     def prepare_training_data(self, stock_symbol: str, test_size: float = 0.2, add_custom_indicator: bool = False, target_type: str = 'binary_classification', correlated_asset:str = "SPY"):

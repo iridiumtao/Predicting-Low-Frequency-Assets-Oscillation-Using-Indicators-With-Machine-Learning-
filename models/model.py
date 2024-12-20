@@ -1,12 +1,11 @@
 from keras.api.models import Sequential
-from keras.api.layers import Dense, LSTM, Dropout
+from keras.api.layers import Dense, LSTM, Dropout, Input
 from sklearn.metrics import mean_squared_error, accuracy_score, precision_score, recall_score, f1_score, classification_report
 import numpy as np
 import optuna
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
-
 
 class Model:
     """
@@ -16,14 +15,15 @@ class Model:
     def __init__(self, model_type: str = 'lstm', output_type: str = 'binary_classification'):
         self.model_type = model_type
         self.output_type = output_type
-        self.model = self._build_model()
+        self.model = None # self.model was initialized here previously, remove this line
         self.best_params = {}
 
-    def _build_model(self) -> Sequential:
+    def _build_model(self, input_shape: tuple) -> Sequential:
         """Builds the LSTM model based on the output type."""
         if self.model_type == 'lstm':
             regressor = Sequential()
-            regressor.add(LSTM(units=50, activation='relu', return_sequences=True, input_shape=(1, None)))
+            regressor.add(Input(shape=input_shape))
+            regressor.add(LSTM(units=50, activation='relu', return_sequences=True))
             regressor.add(Dropout(0.2))
             regressor.add(LSTM(units=60, activation='relu', return_sequences=True))
             regressor.add(Dropout(0.3))
@@ -37,9 +37,11 @@ class Model:
                 regressor.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
             elif self.output_type == 'regression':
                 regressor.add(Dense(units=1))
-                regressor.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae']) # or 'huber_loss'
+                regressor.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])  # or 'huber_loss'
             else:
                 raise ValueError("Invalid output type.")
+
+            print(regressor.summary())
 
             return regressor
         elif self.model_type == 'random_forest':
@@ -54,6 +56,10 @@ class Model:
     def train_model(self, X_train: np.ndarray, y_train: np.ndarray, epochs: int = 50, batch_size: int = 32, X_test: np.ndarray = None, y_test: np.ndarray = None):
         """Trains the specified model."""
         if self.model_type == 'lstm':
+            # Build the model here, when you know the input_shape
+            if self.model is None: # If the model is not initialized before.
+               input_shape = X_train.shape[1:] # Get the input shape of the training data.
+               self.model = self._build_model(input_shape) # build the model here.
             self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_data=[X_test, y_test] if (X_test is not None and y_test is not None) else None, verbose=0)
         elif self.model_type == 'random_forest':
              self._optimize_hyperparameters(X_train, y_train, X_test, y_test, self.objective_rf)
@@ -74,8 +80,8 @@ class Model:
     def evaluate_model(self, X_test: np.ndarray, y_test: np.ndarray):
         """Evaluates the model and returns accuracy and loss metrics."""
         if self.model_type == 'lstm':
-             loss, metric = self.model.evaluate(X_test, y_test)
-             return loss, metric
+            loss, mae = self.model.evaluate(X_test, y_test)
+            return loss, mae
         elif self.model_type == 'random_forest':
             y_pred = self.model.predict(X_test)
             accuracy = accuracy_score(y_test, y_pred)

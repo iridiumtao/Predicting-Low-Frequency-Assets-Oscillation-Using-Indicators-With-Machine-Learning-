@@ -36,10 +36,36 @@ class Trainer:
             X_train, X_test, y_train, y_test = self.data_handler.prepare_training_data(stock_symbol, add_custom_indicator=add_custom_indicator, target_type = target_type, correlated_asset = correlated_asset)
             if X_train is None or X_test is None:
                 continue
+
+            # print(f"Shape of X_train: {X_train.shape}")
+            # print(f"Shape of y_train: {y_train.shape}")
+            # print(f"Type of X_train: {type(X_train)}")
+            # print(f"Type of y_train: {type(y_train)}")
+            # print(f"First 5 rows of y_train: {y_train[:5]}")
+            # print(f"First 5 rows of X_train: {X_train[0, :, :5]}")  # Showing the first five features.
+            #
+            # print(f"Shape of X_test: {X_test.shape}")
+            # print(f"Shape of y_test: {y_test.shape}")
+            # print(f"Type of X_test: {type(X_test)}")
+            # print(f"Type of y_test: {type(y_test)}")
+            # print(f"First 5 rows of y_test: {y_test[:5]}")
+            # print(f"First 5 rows of X_test: {X_test[0, :, :5]}")
+
             self.model.train_model(X_train, y_train, X_test=X_test, y_test=y_test)
             if self.model_type == 'lstm':
-               loss, accuracy = self.model.evaluate_model(X_test, y_test)
-               print(f'Accuracy {accuracy} for {stock_symbol} loss {loss}')
+                loss, mae = self.model.evaluate_model(X_test, y_test)
+                print(f'MAE {mae} (the lower the better) for {stock_symbol} loss {loss} (the lower the better)')
+                result = {
+                    'Stock Symbol': stock_symbol,
+                    'Best Model': self.model.model_type,
+                    'MAE': mae,
+                    'Loss': loss,
+                    'Precision': None,
+                    'Recall': None
+                }
+                result_df = pd.DataFrame([result])
+                self.results_df = pd.concat([self.results_df, result_df], ignore_index=True)
+                self.top_10_results = pd.concat([self.top_10_results, result_df], ignore_index=True)
             else:
                accuracy, precision, recall, f1 = self.model.evaluate_model(X_test, y_test)
                print(f'Accuracy {accuracy}, f1 {f1} for {stock_symbol}')
