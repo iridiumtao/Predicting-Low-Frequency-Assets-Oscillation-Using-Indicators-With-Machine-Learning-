@@ -31,7 +31,7 @@ if __name__ == '__main__':
           prediction_date = "2024-12-19",
           tickers = ["SPY", "QQQ"
                  ],
-          tickers_for_prediction = ["AKFYE.IS", "EUPWR.IS", "YYLGD.IS", "BIMAS.IS", "GENIL.IS", "ODAS.IS", "ISMEN.IS", "ZOREN.IS", "CANTE.IS", "AHGAZ.IS"]
+          tickers_for_prediction = ["SPY"]
     )
     # tickers = [symbol + ".IS" for symbol in config.tickers]
     # Initialize DataHandler
@@ -51,10 +51,10 @@ if __name__ == '__main__':
 
     # Display Results
     display_results(trainer.results_df, trainer.top_10_results, predictor.prediction_results)
-    #
-    # # Initialize Report Generator
-    # report_generator = ReportGenerator(trainer.top_10_results, trainer.results_df, predictor.prediction_results)
-    #
-    # # Save the results in csv files
-    # report_generator.save_results_to_csv()
+
+    # Initialize Report Generator
+    report_generator = ReportGenerator(trainer.top_10_results, trainer.results_df, predictor.prediction_results)
+
+    # Save the results in csv files
+    report_generator.save_results_to_csv()
 

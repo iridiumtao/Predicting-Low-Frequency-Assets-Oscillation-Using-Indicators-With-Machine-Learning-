@@ -32,6 +32,7 @@ class Predictor:
                 correlated_asset (str, optional): Ticker name of the correlated asset. Defaults to "SPY".
         """
         for ticker in self.data_handler.tickers:
+            print(f"Predicting for {ticker}")
             X_pred = self.data_handler.prepare_prediction_data(ticker, prediction_date, add_custom_indicator=add_custom_indicator, correlated_asset=correlated_asset)
 
             if X_pred is not None:
