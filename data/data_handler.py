@@ -1,43 +1,54 @@
 import yfinance as yf
-import plotly.graph_objects as go
-import stockstats
+import pandas as pd
+import os
+import numpy as np
+from typing import List
 from stockstats import StockDataFrame
 import pandas_ta as ta
-import numpy as np
-import pandas as pd
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-
+from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
 from sklearn.linear_model import LinearRegression
-
-from typing import List
+from sklearn.model_selection import train_test_split
 
 class DataHandler:
     """
     Handles fetching, preprocessing, and preparing data for modeling.
     """
 
-    def __init__(self, start_date: str, end_date: str, tickers: List[str]):
+    def __init__(self, start_date: str, end_date: str, tickers: List[str], data_dir: str = 'data/raw_data'):
         self.start_date = start_date
         self.end_date = end_date
         self.tickers = tickers
+        self.data_dir = data_dir
+        create_directory(self.data_dir) # Create directory if it does not exist
         self.stock_data = self._fetch_stock_data()
         self.imputer = SimpleImputer(strategy='mean')
         self.scaler = MinMaxScaler()
 
+
     def _fetch_stock_data(self) -> pd.DataFrame:
-        """Fetches stock data for specified tickers."""
+        """Fetches stock data for specified tickers, using cache if available."""
         all_stock_data = {}
         for ticker in self.tickers:
-            try:
-              all_stock_data[ticker] = yf.download(ticker, start=self.start_date, end=self.end_date)
-            except Exception as e:
-              print(f"Error getting the data for the ticker {ticker}, {e}")
+            file_path = os.path.join(self.data_dir, f'{ticker}.csv')
+            if check_if_file_exists(file_path):
+              print(f"Loading cached data for {ticker} from {file_path}")
+              all_stock_data[ticker] = load_data_from_csv(file_path)
+            else:
+                try:
+                    print(f"Downloading data for {ticker}")
+                    stock_data = yf.download(ticker, start=self.start_date, end=self.end_date)
+                    if not stock_data.empty:
+                        save_data_to_csv(stock_data, file_path)
+                        all_stock_data[ticker] = stock_data
+                    else:
+                       print(f"No data received for {ticker}")
+                except Exception as e:
+                  print(f"Error getting the data for the ticker {ticker}, {e}")
         return all_stock_data
 
     def create_linear_regression_indicator(self, stock_df:pd.DataFrame, correlated_asset_prices):
-        # todo: linear_regression_indicator
         model = LinearRegression()
         X = np.array(correlated_asset_prices).reshape(-1, 1)
         y = stock_df['Close'].values
