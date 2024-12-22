@@ -201,9 +201,8 @@ class DCFValuation:
             else:
                 cost_of_debt = 0
 
-            income_before_tax = is_.loc['Income Before Tax'].iloc[0]
-            income_tax_expense = abs(is_.loc['Income Tax Expense'].iloc[0])
-            tax_rate = income_tax_expense / income_before_tax if income_before_tax != 0 else 0.21 # Use a standard tax rate if income before tax is zero.
+            tax_rate = is_.loc['Tax Rate For Calcs'][0]
+
 
             market_cap = self.stock.info.get('marketCap', 0)
             total_capital = market_cap + total_debt
