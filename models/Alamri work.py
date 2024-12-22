@@ -242,8 +242,7 @@ class DCFValuation:
             else:
                 cost_of_debt = 0
 
-            tax_rate = is_.loc['Tax Rate For Calcs'][0]
-
+            tax_rate = is_.loc['Tax Rate For Calcs'].iloc[0]
 
             market_cap = self.stock.info.get('marketCap', 0)
             total_capital = market_cap + total_debt
