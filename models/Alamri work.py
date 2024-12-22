@@ -1,33 +1,53 @@
+import os
+
+import pickle
 import yfinance as yf
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from keras.api.models import Sequential
+from keras.api.layers import LSTM, Dropout, Dense, Input
+from keras.api.models import Model
+from keras.api.optimizers import Adam
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
 from datetime import datetime, timedelta
+from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
+
 pd.set_option('future.no_silent_downcasting', True)
 
 
 
 class StockPredictor:
-    def __init__(self, stock_ticker, period="5y"):
+    def __init__(self, stock_ticker, period="5y", data_dir: str = 'data/raw_data'):
         self.stock_ticker = stock_ticker
         self.period = period
         self.data = None
+        self.data_dir = data_dir
+        create_directory(self.data_dir)  # Create directory if it does not exist
         self.classification_model = None
         self.regression_model = None
 
     def fetch_historical_data(self):
-        try:
-            stock = yf.Ticker(self.stock_ticker)
-            self.data = stock.history(period=self.period)
-            if self.data.empty:
-                raise ValueError(f"No data found for {self.stock_ticker}")
+        file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
+        if check_if_file_exists(file_path):
+            print(f"Loading cached data for {self.stock_ticker} from {file_path}")
+            self.data = load_data_from_csv(file_path)
             return self.data
-        except Exception as e:
-            raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
+        else:
+            try:
+                print(f"Downloading data for {self.stock_ticker}")
+                stock = yf.Ticker(self.stock_ticker)
+                self.data = stock.history(period=self.period)
+                if self.data.empty:
+                    raise ValueError(f"No data found for {self.stock_ticker}")
+                save_data_to_csv(self.data, file_path)
+                return self.data
+            except Exception as e:
+                raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
 
     def calculate_technical_indicators(self):
         try:
@@ -91,7 +111,16 @@ class StockPredictor:
         self.data = self.data.dropna()
         return self.data, features
 
-    def train_models(self, features):
+    def train_models_random_forest(self, features):
+        """
+        Train Random Forest models for classification and regression.
+
+        Parameters:
+        features (list): List of feature names to be used for training the models.
+
+        Returns:
+        tuple: Trained classification and regression models.
+        """
         X = self.data[features]
         y_class = self.data['Direction']
         y_reg = self.data['Next_Close']
@@ -125,26 +154,115 @@ class StockPredictor:
         class_pred = self.classification_model.predict(X_test)
         reg_pred = self.regression_model.predict(X_test)
 
-        print("\nModel Performance Metrics:")
+        print("\nModel Performance Metrics (Random Forest):")
         print(f"Classification Accuracy: {accuracy_score(y_class_test, class_pred):.3f}")
         print(f"Regression MAE: ${mean_absolute_error(y_reg_test, reg_pred):.2f}")
         print(f"Regression RMSE: ${np.sqrt(mean_squared_error(y_reg_test, reg_pred)):.2f}")
 
         return self.classification_model, self.regression_model
 
-    def predict_next_day(self, features):
+    def train_models_LSTM(self, features):
+        print("Training Multi-Task LSTM Model")
+
+        X = self.data[features]
+        y_class = (self.data['Next_Close'] > self.data['Close']).astype(int)
+        y_reg = self.data['Next_Close']
+
+        X_train, X_test, y_class_train, y_class_test, y_reg_train, y_reg_test = train_test_split(
+            X, y_class, y_reg, test_size=0.3, random_state=42)
+
+        scaler = MinMaxScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        X_train_reshaped = np.expand_dims(X_train_scaled, axis=1)
+        X_test_reshaped = np.expand_dims(X_test_scaled, axis=1)
+
+        # build model
+        inputs = Input(shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2]))
+
+        x = LSTM(50, activation='relu', return_sequences=True)(inputs)
+        x = Dropout(0.2)(x)
+        x = LSTM(50, activation='relu')(x)
+        x = Dropout(0.2)(x)
+
+        classification_output = Dense(1, activation='sigmoid', name='classification')(x)
+
+        regression_output = Dense(1, name='regression')(x)
+
+        model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss={
+                'classification': 'binary_crossentropy',
+                'regression': 'mean_squared_error'
+            },
+            metrics={
+                'classification': ['accuracy'],
+                'regression': ['mse']
+            }
+        )
+        # train
+        model.fit(
+            X_train_reshaped,
+            {'classification': y_class_train, 'regression': y_reg_train},
+            validation_data=(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test}),
+            epochs=50,
+            batch_size=32,
+            verbose=1
+        )
+
+        # model evaluation
+        results = model.evaluate(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test})
+        print("Evaluation Results:", results)
+
+        self.multi_task_model = model
+        self.scaler = scaler
+
+    def predict_next_day_LSTM(self, features):
+        latest_data = self.data[features].iloc[-1:]
+        latest_scaled = self.scaler.transform(latest_data)
+        latest_reshaped = np.expand_dims(latest_scaled, axis=1)
+
+        classification_pred, regression_pred = self.multi_task_model.predict(latest_reshaped)
+
+        predicted_direction = "Up" if classification_pred[0][0] > 0.5 else "Down"
+        confidence = classification_pred[0][0] * 100 if predicted_direction == "Up" else (1 - classification_pred[0][
+            0]) * 100
+
+        predicted_price = regression_pred[0][0]
+        residuals = regression_pred.flatten() - self.data['Next_Close']
+        std_residuals = np.std(residuals)
+        price_uncertainty = std_residuals * 2
+
+        return {
+            'direction': predicted_direction,
+            'direction_confidence': confidence,
+            'predicted_price': predicted_price,
+            'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
+        }
+
+    def predict_next_day_rf(self, features):
         latest_data = self.data[features].iloc[-1:]
 
-        direction_prob = self.classification_model.predict_proba(latest_data)[0]
-        predicted_direction = "Up" if direction_prob[1] > 0.5 else "Down"
-        confidence = max(direction_prob) * 100
+        predicted_direction = None
+        predicted_price = 0
+        confidence = 0
+        price_uncertainty = 0
 
-        predicted_price = self.regression_model.predict(latest_data)[0]
+        if self.classification_model is not None:
+            direction_prob = self.classification_model.predict_proba(latest_data)[0]
+            predicted_direction = "Up" if direction_prob[1] > 0.5 else "Down"
+            confidence = max(direction_prob) * 100
 
-        feature_importance = self.regression_model.feature_importances_
-        residuals = self.regression_model.predict(self.data[features]) - self.data['Next_Close']
-        std_residuals = np.std(residuals)
-        price_uncertainty = std_residuals * 2 # 2 standard deviations
+        if self.regression_model is not None:
+            predicted_price = self.regression_model.predict(latest_data)[0]
+
+            feature_importance = self.regression_model.feature_importances_
+            residuals = self.regression_model.predict(self.data[features]) - self.data['Next_Close']
+            std_residuals = np.std(residuals)
+            price_uncertainty = std_residuals * 2 # 2 standard deviations
 
         return {
             'direction': predicted_direction,
@@ -154,15 +272,41 @@ class StockPredictor:
         }
 
 class DCFValuation:
-    def __init__(self, ticker):
+    def __init__(self, ticker, data_dir: str = 'data/raw_data'):
         self.ticker = ticker
         self.stock = yf.Ticker(ticker)
+        self.data_dir = data_dir
+        create_directory(self.data_dir)  # Create directory if it does not exist
 
     def fetch_financial_data(self):
+        file_path = os.path.join(self.data_dir, f'{self.ticker}_financial_data.pkl')
+
+        # load from cache
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'rb') as f:
+                    cached_data = pickle.load(f)
+                print("Loaded cached DCF data.")
+                return cached_data
+            except Exception as e:
+                print(f"Error loading cached DCF data: {str(e)}")
+
+
         try:
             cf = self.stock.cash_flow
             bs = self.stock.balance_sheet
             is_ = self.stock.income_stmt
+
+            # Save data to cache
+            data = (cf, bs, is_)
+            try:
+                file_path = os.path.join(self.data_dir, f'{self.ticker}_financial_data.pkl')
+                with open(file_path, 'wb') as f:
+                    pickle.dump(data, f)
+                print("Saved DCF data to cache.")
+            except Exception as e:
+                print(f"Error saving cached DCF data: {str(e)}")
+
             return cf, bs, is_
         except Exception as e:
             raise Exception(f"Error fetching financial data: {str(e)}")
@@ -201,8 +345,7 @@ class DCFValuation:
             else:
                 cost_of_debt = 0
 
-            tax_rate = is_.loc['Tax Rate For Calcs'][0]
-
+            tax_rate = is_.loc['Tax Rate For Calcs'].iloc[0]
 
             market_cap = self.stock.info.get('marketCap', 0)
             total_capital = market_cap + total_debt
@@ -277,33 +420,35 @@ class DCFValuation:
             raise Exception(f"Error calculating intrinsic value: {str(e)}")
 
 def main(ticker):
-    try:
-        predictor = StockPredictor(ticker)
-        predictor.fetch_historical_data()
-        predictor.calculate_technical_indicators()
-        data, features = predictor.prepare_features()
-        predictor.train_models(features)
-        predictions = predictor.predict_next_day(features)
+    # try:
+    predictor = StockPredictor(ticker)
+    predictor.fetch_historical_data()
+    predictor.calculate_technical_indicators()
+    data, features = predictor.prepare_features()
+    # predictor.train_models_random_forest(features)
+    predictor.train_models_LSTM(features)
+    predictions = predictor.predict_next_day_LSTM(features)
+    # predictions = predictor.predict_next_day_rf(features)
 
-        print(f"\nTechnical Analysis Predictions for {ticker}:")
-        print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
-        print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
-        print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
+    print(f"\nTechnical Analysis Predictions for {ticker}:")
+    print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
+    print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
+    print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
 
-        print("\nCalculating DCF Valuation...")
-        dcf = DCFValuation(ticker)
-        valuation = dcf.calculate_intrinsic_value()
+    print("\nCalculating DCF Valuation...")
+    dcf = DCFValuation(ticker)
+    valuation = dcf.calculate_intrinsic_value()
 
-        print(f"\nDCF Valuation Results:")
-        print(f"Intrinsic Value: ${valuation['intrinsic_value']:.2f}")
-        print(f"Current Price: ${valuation['current_price']:.2f}")
-        print(f"Potential Upside: {valuation['upside']:.1f}%")
-        print(f"WACC: {valuation['wacc']:.1f}%")
-        print(f"Growth Rate: {valuation['growth_rate']:.1f}%")
-        print(f"Terminal Growth: {valuation['terminal_growth']:.1f}%")
+    print(f"\nDCF Valuation Results:")
+    print(f"Intrinsic Value: ${valuation['intrinsic_value']:.2f}")
+    print(f"Current Price: ${valuation['current_price']:.2f}")
+    print(f"Potential Upside: {valuation['upside']:.1f}%")
+    print(f"WACC: {valuation['wacc']:.1f}%")
+    print(f"Growth Rate: {valuation['growth_rate']:.1f}%")
+    print(f"Terminal Growth: {valuation['terminal_growth']:.1f}%")
 
-    except Exception as e:
-        print(f"Error in analysis pipeline: {str(e)}")
+    # except Exception as e:
+    #     print(f"Error in analysis pipeline: {str(e)}")
 
 if __name__ == "__main__":
     main("MSFT")
