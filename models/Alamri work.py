@@ -1,5 +1,6 @@
 import os
 
+import pickle
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -168,15 +169,41 @@ class StockPredictor:
         }
 
 class DCFValuation:
-    def __init__(self, ticker):
+    def __init__(self, ticker, data_dir: str = 'data/raw_data'):
         self.ticker = ticker
         self.stock = yf.Ticker(ticker)
+        self.data_dir = data_dir
+        create_directory(self.data_dir)  # Create directory if it does not exist
 
     def fetch_financial_data(self):
+        file_path = os.path.join(self.data_dir, f'{self.ticker}_financial_data.pkl')
+
+        # load from cache
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'rb') as f:
+                    cached_data = pickle.load(f)
+                print("Loaded cached DCF data.")
+                return cached_data
+            except Exception as e:
+                print(f"Error loading cached DCF data: {str(e)}")
+
+
         try:
             cf = self.stock.cash_flow
             bs = self.stock.balance_sheet
             is_ = self.stock.income_stmt
+
+            # Save data to cache
+            data = (cf, bs, is_)
+            try:
+                file_path = os.path.join(self.data_dir, f'{self.ticker}_financial_data.pkl')
+                with open(file_path, 'wb') as f:
+                    pickle.dump(data, f)
+                print("Saved DCF data to cache.")
+            except Exception as e:
+                print(f"Error saving cached DCF data: {str(e)}")
+
             return cf, bs, is_
         except Exception as e:
             raise Exception(f"Error fetching financial data: {str(e)}")
