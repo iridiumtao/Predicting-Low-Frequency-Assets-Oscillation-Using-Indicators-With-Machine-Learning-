@@ -9,6 +9,7 @@ from keras.api.models import Sequential
 from keras.api.layers import LSTM, Dropout, Dense, Input
 from keras.api.models import Model
 from keras.api.optimizers import Adam
+from joblib import dump, load
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -161,36 +162,52 @@ class StockPredictor:
 
         return self.classification_model, self.regression_model
 
-    def train_models_LSTM(self, features):
-        print("Training Multi-Task LSTM Model")
+    def create_time_series_data(self, features, window_size=10):
+        """Creates time series data with a sliding window."""
+        X, y_class, y_reg = [], [], []
+        for i in range(len(self.data) - window_size):
+            X.append(self.data[features].iloc[i:i + window_size].values)
+            y_class.append(
+                (self.data['Next_Close'].iloc[i + window_size] > self.data['Close'].iloc[i + window_size]).astype(int))
+            y_reg.append(self.data['Next_Close'].iloc[i + window_size])
+        return np.array(X), np.array(y_class), np.array(y_reg)
 
-        X = self.data[features]
-        y_class = (self.data['Next_Close'] > self.data['Close']).astype(int)
-        y_reg = self.data['Next_Close']
+    def train_models_LSTM(self, features, window_size=10):
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.weights.h5")
+        scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
+
+        if os.path.exists(model_path) and os.path.exists(scaler_path):
+            print(f"Loading model and scaler from {self.data_dir} for {self.stock_ticker}")
+            self.lstm_model = self._build_model(features, window_size)
+            self.lstm_model.load_weights(model_path)
+            self.scaler = load(scaler_path)
+        else:
+            print(f"Training the model for {self.stock_ticker}")
+            self._train_models_LSTM(features, window_size)
+
+    def _train_models_LSTM(self, features, window_size=10):
+        print("Training Multi-Task LSTM Model")
+        X, y_class, y_reg = self.create_time_series_data(features, window_size)
 
         X_train, X_test, y_class_train, y_class_test, y_reg_train, y_reg_test = train_test_split(
             X, y_class, y_reg, test_size=0.3, random_state=42)
 
+        X_train_scaled = []
         scaler = MinMaxScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
+        for series in X_train:
+            scaled_series = scaler.fit_transform(series)
+            X_train_scaled.append(scaled_series)
+        X_train_scaled = np.array(X_train_scaled)
 
-        X_train_reshaped = np.expand_dims(X_train_scaled, axis=1)
-        X_test_reshaped = np.expand_dims(X_test_scaled, axis=1)
+        X_test_scaled = []
+        for series in X_test:
+            scaled_series = scaler.transform(series)
+            X_test_scaled.append(scaled_series)
+        X_test_scaled = np.array(X_test_scaled)
 
+        self.scaler = scaler  # save scaler
         # build model
-        inputs = Input(shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2]))
-
-        x = LSTM(50, activation='relu', return_sequences=True)(inputs)
-        x = Dropout(0.2)(x)
-        x = LSTM(50, activation='relu')(x)
-        x = Dropout(0.2)(x)
-
-        classification_output = Dense(1, activation='sigmoid', name='classification')(x)
-
-        regression_output = Dense(1, name='regression')(x)
-
-        model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        model = self._build_model(features, window_size)
 
         model.compile(
             optimizer=Adam(learning_rate=0.001),
@@ -205,34 +222,56 @@ class StockPredictor:
         )
         # train
         model.fit(
-            X_train_reshaped,
+            X_train_scaled,
             {'classification': y_class_train, 'regression': y_reg_train},
-            validation_data=(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test}),
+            validation_data=(X_test_scaled, {'classification': y_class_test, 'regression': y_reg_test}),
             epochs=50,
             batch_size=32,
             verbose=1
         )
 
         # model evaluation
-        results = model.evaluate(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test})
+        results = model.evaluate(X_test_scaled, {'classification': y_class_test, 'regression': y_reg_test})
         print("Evaluation Results:", results)
 
-        self.multi_task_model = model
-        self.scaler = scaler
+        self.lstm_model = model
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.weights.h5")
+        scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
+        self.lstm_model.save_weights(model_path)
+        dump(self.scaler, scaler_path)
 
-    def predict_next_day_LSTM(self, features):
-        latest_data = self.data[features].iloc[-1:]
+    def _build_model(self, features, window_size):
+        X, _, _ = self.create_time_series_data(features, window_size)  # get data shape
+        inputs = Input(shape=(X.shape[1], X.shape[2]))
+
+        x = LSTM(64, activation='relu', return_sequences=True)(inputs)
+        x = Dropout(0.2)(x)
+        x = LSTM(64, activation='relu', return_sequences=True)(x)
+        x = Dropout(0.2)(x)
+        x = LSTM(64, activation='relu')(x)
+        x = Dropout(0.2)(x)
+
+        classification_output = Dense(1, activation='sigmoid', name='classification')(x)
+
+        regression_output = Dense(1, name='regression')(x)
+
+        model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        return model
+
+    def predict_next_day_LSTM(self, features, window_size=10):
+        latest_data = self.data[features].iloc[-window_size:].values
         latest_scaled = self.scaler.transform(latest_data)
-        latest_reshaped = np.expand_dims(latest_scaled, axis=1)
+        latest_reshaped = np.expand_dims(latest_scaled, axis=0)  # Make sure it is 3d
 
-        classification_pred, regression_pred = self.multi_task_model.predict(latest_reshaped)
+        classification_pred, regression_pred = self.lstm_model.predict(latest_reshaped)
 
         predicted_direction = "Up" if classification_pred[0][0] > 0.5 else "Down"
         confidence = classification_pred[0][0] * 100 if predicted_direction == "Up" else (1 - classification_pred[0][
             0]) * 100
 
         predicted_price = regression_pred[0][0]
-        residuals = regression_pred.flatten() - self.data['Next_Close']
+        residuals = regression_pred.flatten() - self.data['Next_Close'].iloc[
+            -1]  # Only use the last data to calculate residual
         std_residuals = np.std(residuals)
         price_uncertainty = std_residuals * 2
 
