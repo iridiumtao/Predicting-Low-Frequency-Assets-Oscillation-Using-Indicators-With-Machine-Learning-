@@ -1,5 +1,4 @@
 import os
-
 import pickle
 import yfinance as yf
 import numpy as np
@@ -17,9 +16,11 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
 from datetime import datetime, timedelta
 from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
+from keras.api.callbacks import ReduceLROnPlateau
+from keras.api.regularizers import l2
+
 
 pd.set_option('future.no_silent_downcasting', True)
-
 
 
 class StockPredictor:
@@ -31,6 +32,8 @@ class StockPredictor:
         create_directory(self.data_dir)  # Create directory if it does not exist
         self.classification_model = None
         self.regression_model = None
+        self.lstm_model = None
+        self.scaler = None
 
     def fetch_historical_data(self):
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
@@ -165,6 +168,8 @@ class StockPredictor:
     def create_time_series_data(self, features, window_size=10):
         """Creates time series data with a sliding window."""
         X, y_class, y_reg = [], [], []
+        if len(self.data) < window_size:
+            return np.array([]), np.array([]), np.array([])  # Return empty arrays if not enough data
         for i in range(len(self.data) - window_size):
             X.append(self.data[features].iloc[i:i + window_size].values)
             y_class.append(
@@ -220,6 +225,7 @@ class StockPredictor:
                 'regression': ['mse']
             }
         )
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001)  # 加入 Learning rate scheduler
         # train
         model.fit(
             X_train_scaled,
@@ -227,7 +233,8 @@ class StockPredictor:
             validation_data=(X_test_scaled, {'classification': y_class_test, 'regression': y_reg_test}),
             epochs=50,
             batch_size=32,
-            verbose=1
+            verbose=1,
+            callbacks=[reduce_lr]
         )
 
         # model evaluation
@@ -244,21 +251,22 @@ class StockPredictor:
         X, _, _ = self.create_time_series_data(features, window_size)  # get data shape
         inputs = Input(shape=(X.shape[1], X.shape[2]))
 
-        x = LSTM(64, activation='relu', return_sequences=True)(inputs)
-        x = Dropout(0.2)(x)
-        x = LSTM(64, activation='relu', return_sequences=True)(x)
-        x = Dropout(0.2)(x)
-        x = LSTM(64, activation='relu')(x)
-        x = Dropout(0.2)(x)
+        x = LSTM(64, activation='relu', return_sequences=True, kernel_regularizer=l2(0.001))(inputs)
+        x = Dropout(0.3)(x)
+        x = LSTM(64, activation='relu', return_sequences=True, kernel_regularizer=l2(0.001))(x)
+        x = Dropout(0.3)(x)
+        x = LSTM(64, activation='relu', kernel_regularizer=l2(0.001))(x)
+        x = Dropout(0.3)(x)
 
         classification_output = Dense(1, activation='sigmoid', name='classification')(x)
 
         regression_output = Dense(1, name='regression')(x)
 
         model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        print(model.summary())
         return model
 
-    def predict_next_day_LSTM(self, features, window_size=10):
+    def predict_next_day_LSTM(self, features, window_size=10, price_uncertainty_multiplier=0.02):
         latest_data = self.data[features].iloc[-window_size:].values
         latest_scaled = self.scaler.transform(latest_data)
         latest_reshaped = np.expand_dims(latest_scaled, axis=0)  # Make sure it is 3d
@@ -266,20 +274,24 @@ class StockPredictor:
         classification_pred, regression_pred = self.lstm_model.predict(latest_reshaped)
 
         predicted_direction = "Up" if classification_pred[0][0] > 0.5 else "Down"
-        confidence = classification_pred[0][0] * 100 if predicted_direction == "Up" else (1 - classification_pred[0][
-            0]) * 100
+        confidence = classification_pred[0][0] * 100 if predicted_direction == "Up" else (1 - classification_pred[0][0]) * 100
 
-        predicted_price = regression_pred[0][0]
-        residuals = regression_pred.flatten() - self.data['Next_Close'].iloc[
-            -1]  # Only use the last data to calculate residual
-        std_residuals = np.std(residuals)
-        price_uncertainty = std_residuals * 2
+        # inverse normalization
+        predicted_price_scaled = regression_pred[0][0] # Get scaled price
+        dummy_array = np.zeros_like(latest_data[0]) # Create a dummy data with the same shape as your input
+        dummy_array[-1] = predicted_price_scaled  # insert your predicted price
+        dummy_array = np.expand_dims(dummy_array, axis=0)
+        predicted_price = self.scaler.inverse_transform(dummy_array)[0][-1] # Invert the scaled data.
+
+
+        price_uncertainty = abs(predicted_price) * price_uncertainty_multiplier
+        price_range = (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
 
         return {
             'direction': predicted_direction,
             'direction_confidence': confidence,
             'predicted_price': predicted_price,
-            'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
+            'price_range': price_range
         }
 
     def predict_next_day_rf(self, features):
