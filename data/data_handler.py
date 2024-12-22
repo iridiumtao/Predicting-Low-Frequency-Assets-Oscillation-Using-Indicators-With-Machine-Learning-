@@ -1,15 +1,17 @@
-import yfinance as yf
-import pandas as pd
 import os
-import numpy as np
 from typing import List
-from stockstats import StockDataFrame
-import pandas_ta as ta
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import MinMaxScaler
-from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from stockstats import StockDataFrame
+
+from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
+
 
 class DataHandler:
     """
@@ -21,11 +23,10 @@ class DataHandler:
         self.end_date = end_date
         self.tickers = tickers
         self.data_dir = data_dir
-        create_directory(self.data_dir) # Create directory if it does not exist
+        create_directory(self.data_dir)  # Create directory if it does not exist
         self.stock_data = self._fetch_stock_data()
         self.imputer = SimpleImputer(strategy='mean')
         self.scaler = MinMaxScaler()
-
 
     def _fetch_stock_data(self) -> pd.DataFrame:
         """Fetches stock data for specified tickers, using cache if available."""
@@ -33,9 +34,8 @@ class DataHandler:
         for ticker in self.tickers:
             file_path = os.path.join(self.data_dir, f'{ticker}.csv')
             if check_if_file_exists(file_path):
-              print(f"Loading cached data for {ticker} from {file_path}")
-              # todo: warning: only loading 1000 rows for now
-              all_stock_data[ticker] = load_data_from_csv(file_path)
+                print(f"Loading cached data for {ticker} from {file_path}")
+                all_stock_data[ticker] = load_data_from_csv(file_path)
             else:
                 try:
                     print(f"Downloading data for {ticker}")
@@ -44,12 +44,12 @@ class DataHandler:
                         save_data_to_csv(stock_data, file_path)
                         all_stock_data[ticker] = stock_data
                     else:
-                       print(f"No data received for {ticker}")
+                        print(f"No data received for {ticker}")
                 except Exception as e:
-                  print(f"Error getting the data for the ticker {ticker}, {e}")
+                    print(f"Error getting the data for the ticker {ticker}, {e}")
         return all_stock_data
 
-    def create_linear_regression_indicator(self, stock_df:pd.DataFrame, correlated_asset_prices):
+    def create_linear_regression_indicator(self, stock_df: pd.DataFrame, correlated_asset_prices):
         model = LinearRegression()
         X = np.array(correlated_asset_prices).reshape(-1, 1)
         y = stock_df['close'].values
@@ -59,7 +59,8 @@ class DataHandler:
         stock_df['custom_indicator_lr'] = predicted_price
         return stock_df
 
-    def extract_features(self, stock_data: pd.DataFrame, add_custom_indicator: bool = False, correlated_asset:str = "SPY") -> pd.DataFrame:
+    def extract_features(self, stock_data: pd.DataFrame, add_custom_indicator: bool = False,
+                         correlated_asset: str = "SPY") -> pd.DataFrame:
         """Extracts features (technical indicators) from the stock data.
 
         Args:
@@ -67,16 +68,15 @@ class DataHandler:
             add_custom_indicator (bool, optional): Whether to add the custom linear regression indicator. Defaults to False.
             correlated_asset (str, optional): Ticker name of the correlated asset. Defaults to "SPY".
         """
-        if not isinstance(stock_data, pd.DataFrame) or stock_data.empty: # Check if the stock_data is a correct dataframe and it's not empty.
-           print("stock_data is not a valid DataFrame or is empty, skipping feature extraction")
-           return pd.DataFrame() # return empty dataframe
+        if not isinstance(stock_data, pd.DataFrame) or stock_data.empty:
+            print("stock_data is not a valid DataFrame or is empty, skipping feature extraction")
+            return pd.DataFrame()
         try:
             stock_df = StockDataFrame.retype(stock_data.copy())
             return stock_df
         except Exception as e:
             print(f"Error in extract_features with ticker {stock_data}, {e}")
-            return pd.DataFrame() # return empty dataframe
-
+            return pd.DataFrame()
 
     def preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Preprocesses the data by imputing missing values and scaling."""
@@ -91,17 +91,18 @@ class DataHandler:
             target_type (str, optional): Choose between 'binary_classification' or 'regression'. Defaults to 'binary_classification'.
         """
         if target_type == 'binary_classification':
-           df['direction'] = (df['close'].shift(-1) > df['close']).astype(int)
-           target_column = 'direction'
+            df['direction'] = (df['close'].shift(-1) > df['close']).astype(int)
+            target_column = 'direction'
         elif target_type == 'regression':
             df['target'] = df['close'].shift(-1) - df['close']
             target_column = 'target'
         else:
             raise ValueError("Invalid target type.")
-        df = df.dropna(subset = [target_column])
+        df = df.dropna(subset=[target_column])
         return df, target_column
 
-    def prepare_training_data(self, stock_symbol: str, test_size: float = 0.2, add_custom_indicator: bool = False, target_type: str = 'binary_classification', correlated_asset:str = "SPY"):
+    def prepare_training_data(self, stock_symbol: str, test_size: float = 0.2, add_custom_indicator: bool = False,
+                              target_type: str = 'binary_classification', correlated_asset: str = "SPY"):
         """Prepares the training and test data sets.
         Args:
             stock_symbol (str): Stock symbol to be used.
@@ -138,32 +139,39 @@ class DataHandler:
 
         return X_train_reshaped, X_test_reshaped, y_train, y_test
 
-    def prepare_prediction_data(self, stock_symbol:str, prediction_date: str, add_custom_indicator: bool = False, correlated_asset:str = "SPY"):
-         """Prepare data to make a prediction.
-         Args:
-            stock_symbol (str): Stock symbol to be used.
-            prediction_date (str): Prediction end date.
-            add_custom_indicator (bool, optional): Whether to add custom indicators. Defaults to False.
-            correlated_asset (str, optional): Ticker name of the correlated asset. Defaults to "SPY".
-         """
-         past_days = 10
-         try:
-            stock_data = yf.download(stock_symbol, start= (pd.to_datetime(prediction_date) - pd.Timedelta(days=past_days)).strftime('%Y-%m-%d'), end=prediction_date)
-         except Exception as e:
-             print(f"Error {e} with the ticker {stock_symbol}")
-             return None
+    def prepare_prediction_data(self, stock_symbol: str, prediction_date: str, add_custom_indicator: bool = False,
+                                correlated_asset: str = "SPY"):
+        """Prepare data to make a prediction.
+        Args:
+           stock_symbol (str): Stock symbol to be used.
+           prediction_date (str): Prediction end date.
+           add_custom_indicator (bool, optional): Whether to add custom indicators. Defaults to False.
+           correlated_asset (str, optional): Ticker name of the correlated asset. Defaults to "SPY".
+        """
+        past_days = 10
+        try:
+            stock_data = yf.download(stock_symbol,
+                                     start=(pd.to_datetime(prediction_date) - pd.Timedelta(days=past_days)).strftime(
+                                         '%Y-%m-%d'), end=prediction_date)
+        except Exception as e:
+            print(f"Error {e} with the ticker {stock_symbol}")
+            return None
 
+        if stock_data.empty:
+            print(f"No data in prepare_prediction_data for ticker {stock_symbol}, skipping")
+            return None
 
-         if stock_data.empty:
-           print(f"No data in prepare_prediction_data for ticker {stock_symbol}, skipping")
-           return None
-         try:
-              # Use only the 'close' column for prediction
-             X = stock_data[['Close']].copy()
-              # Scale the prediction data
-             X_scaled = self.scaler.transform(X)
-             X_reshaped = np.expand_dims(X_scaled, axis=1)
-             return X_reshaped
-         except Exception as e:
+        try:
+            features_data = self.extract_features(stock_data, add_custom_indicator, correlated_asset)
+            if features_data.empty:
+                print(f"features_data is empty, skipping prepare_prediction_data for {stock_symbol}")
+                return None
+
+            # Select all columns from the processed data, excluding target column.
+            X = features_data.drop(['close', 'target', 'direction'], axis=1, errors='ignore')
+            X_scaled = self.scaler.transform(X)
+            X_reshaped = np.expand_dims(X_scaled, axis=1)
+            return X_reshaped
+        except Exception as e:
             print(f"Error in prepare_prediction_data for {stock_symbol}, {e}")
             return None
