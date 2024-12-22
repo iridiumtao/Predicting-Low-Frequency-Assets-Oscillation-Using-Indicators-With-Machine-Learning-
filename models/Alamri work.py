@@ -1,3 +1,5 @@
+import os
+
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -7,27 +9,39 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
 from datetime import datetime, timedelta
+from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
+
 pd.set_option('future.no_silent_downcasting', True)
 
 
 
 class StockPredictor:
-    def __init__(self, stock_ticker, period="5y"):
+    def __init__(self, stock_ticker, period="5y", data_dir: str = 'data/raw_data'):
         self.stock_ticker = stock_ticker
         self.period = period
         self.data = None
+        self.data_dir = data_dir
+        create_directory(self.data_dir)  # Create directory if it does not exist
         self.classification_model = None
         self.regression_model = None
 
     def fetch_historical_data(self):
-        try:
-            stock = yf.Ticker(self.stock_ticker)
-            self.data = stock.history(period=self.period)
-            if self.data.empty:
-                raise ValueError(f"No data found for {self.stock_ticker}")
+        file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
+        if check_if_file_exists(file_path):
+            print(f"Loading cached data for {self.stock_ticker} from {file_path}")
+            self.data = load_data_from_csv(file_path)
             return self.data
-        except Exception as e:
-            raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
+        else:
+            try:
+                print(f"Downloading data for {self.stock_ticker}")
+                stock = yf.Ticker(self.stock_ticker)
+                self.data = stock.history(period=self.period)
+                if self.data.empty:
+                    raise ValueError(f"No data found for {self.stock_ticker}")
+                save_data_to_csv(self.data, file_path)
+                return self.data
+            except Exception as e:
+                raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
 
     def calculate_technical_indicators(self):
         try:
@@ -277,33 +291,33 @@ class DCFValuation:
             raise Exception(f"Error calculating intrinsic value: {str(e)}")
 
 def main(ticker):
-    try:
-        predictor = StockPredictor(ticker)
-        predictor.fetch_historical_data()
-        predictor.calculate_technical_indicators()
-        data, features = predictor.prepare_features()
-        predictor.train_models(features)
-        predictions = predictor.predict_next_day(features)
+    # try:
+    predictor = StockPredictor(ticker)
+    predictor.fetch_historical_data()
+    predictor.calculate_technical_indicators()
+    data, features = predictor.prepare_features()
+    predictor.train_models(features)
+    predictions = predictor.predict_next_day(features)
 
-        print(f"\nTechnical Analysis Predictions for {ticker}:")
-        print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
-        print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
-        print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
+    print(f"\nTechnical Analysis Predictions for {ticker}:")
+    print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
+    print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
+    print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
 
-        print("\nCalculating DCF Valuation...")
-        dcf = DCFValuation(ticker)
-        valuation = dcf.calculate_intrinsic_value()
+    print("\nCalculating DCF Valuation...")
+    dcf = DCFValuation(ticker)
+    valuation = dcf.calculate_intrinsic_value()
 
-        print(f"\nDCF Valuation Results:")
-        print(f"Intrinsic Value: ${valuation['intrinsic_value']:.2f}")
-        print(f"Current Price: ${valuation['current_price']:.2f}")
-        print(f"Potential Upside: {valuation['upside']:.1f}%")
-        print(f"WACC: {valuation['wacc']:.1f}%")
-        print(f"Growth Rate: {valuation['growth_rate']:.1f}%")
-        print(f"Terminal Growth: {valuation['terminal_growth']:.1f}%")
+    print(f"\nDCF Valuation Results:")
+    print(f"Intrinsic Value: ${valuation['intrinsic_value']:.2f}")
+    print(f"Current Price: ${valuation['current_price']:.2f}")
+    print(f"Potential Upside: {valuation['upside']:.1f}%")
+    print(f"WACC: {valuation['wacc']:.1f}%")
+    print(f"Growth Rate: {valuation['growth_rate']:.1f}%")
+    print(f"Terminal Growth: {valuation['terminal_growth']:.1f}%")
 
-    except Exception as e:
-        print(f"Error in analysis pipeline: {str(e)}")
+    # except Exception as e:
+    #     print(f"Error in analysis pipeline: {str(e)}")
 
 if __name__ == "__main__":
     main("MSFT")
