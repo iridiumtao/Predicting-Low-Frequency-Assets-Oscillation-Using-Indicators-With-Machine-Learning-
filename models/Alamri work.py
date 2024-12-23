@@ -166,7 +166,7 @@ class StockPredictor:
         return self.classification_model, self.regression_model
 
     def train_models_LSTM(self, features):
-        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.hdf5")
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.keras")
         scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
 
         if os.path.exists(model_path) and os.path.exists(scaler_path):
@@ -224,7 +224,7 @@ class StockPredictor:
         print("Evaluation Results:", results)
 
         self.lstm_model = model
-        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.hdf5")
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.keras")
         scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
         self.lstm_model.save(model_path)
         self.scaler = scaler
@@ -481,4 +481,4 @@ def main(ticker):
     #     print(f"Error in analysis pipeline: {str(e)}")
 
 if __name__ == "__main__":
-    main("MSFT")
+    main("INTC")
