@@ -37,7 +37,7 @@ class StockPredictor:
         self.lstm_model = None
         self.transformer_model = None
         self.scaler = None
-        self.transformer_scaler = None  # For Transformer specific scaling
+        self.transformer_scaler: MinMaxScaler = None  # For Transformer specific scaling
 
     def fetch_historical_data(self):
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
@@ -347,7 +347,7 @@ class StockPredictor:
         )
 
         BATCH_SIZE = 64
-        EPOCHS = 100
+        EPOCHS = 50
         self.transformer_model.fit(train_sequences, train_labels,
                                   validation_data=(validation_sequences, validation_labels),
                                   epochs=EPOCHS,
@@ -516,10 +516,10 @@ class StockPredictor:
         # The transformer predicts the 'Next_Close' which was directly scaled.
         # We need to inverse transform it. To do this, we need a dummy array
         # with the same number of features as what the scaler was trained on.
-        dummy_array = np.zeros((1, self.transformer_scaler.scale_.shape[0]))
-        dummy_array[:, self.transformer_scaler.feature_names_in_.tolist().index('Close')] = predicted_price_scaled # Assuming 'Close' was part of the features
-
-        predicted_price = self.transformer_scaler.inverse_transform(dummy_array)[0][self.transformer_scaler.feature_names_in_.tolist().index('Close')]
+        dummy_array = np.zeros((1, len(features)))
+        close_index = features.index('Close')
+        dummy_array[0, close_index] = predicted_price_scaled
+        predicted_price = self.transformer_scaler.inverse_transform(dummy_array)[0][close_index]
 
         # Calculate a rough price range (you might want a more sophisticated method)
         price_uncertainty = np.std(self.data['Close'][-sequence_length:])
