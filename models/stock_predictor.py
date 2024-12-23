@@ -106,7 +106,21 @@ class StockPredictor:
 
         return adx
 
-    def prepare_features(self, sequence_length=30):
+    def prepare_features(self):
+        self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
+        self.data['Next_Close'] = self.data['Close'].shift(-1)
+
+        features = [
+            'Close', 'RSI', 'BB_width', 'Volume_Ratio', 'Return_Volatility',
+            '20_SMA', '50_SMA', '200_SMA', '20_EMA', '50_EMA', '200_EMA',
+            'ADX', 'Daily_Return'
+        ]
+
+        self.data = self.data.dropna()
+        return self.data, features
+
+
+    def prepare_features_transformer(self, sequence_length=30):
         self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
         self.data['Next_Close'] = self.data['Close'].shift(-1)
 

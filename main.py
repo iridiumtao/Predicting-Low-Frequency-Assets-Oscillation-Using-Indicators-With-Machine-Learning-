@@ -11,25 +11,25 @@ def main(ticker):
     predictor = StockPredictor(ticker)
     predictor.fetch_historical_data()
     predictor.calculate_technical_indicators()
-    # data, features = predictor.prepare_features()
-    data, features, X_transformer, y_transformer = predictor.prepare_features(sequence_length=30)
-    # predictor.train_models_random_forest(features)
+    data, features = predictor.prepare_features()
+    # data, features, X_transformer, y_transformer = predictor.prepare_features_transformer(sequence_length=30)
+    predictor.train_models_random_forest(features)
     # predictor.train_models_LSTM(features)
     # predictions = predictor.predict_next_day_LSTM(features)
-    # predictions = predictor.predict_next_day_rf(features)
+    predictions = predictor.predict_next_day_rf(features)
 
-    predictor.train_models_transformer(X_transformer, y_transformer) # 訓練 Transformer 模型
-    predictions_transformer = predictor.predict_next_day_transformer(sequence_length=30)
-    print(f"\nTransformer Predictions for {ticker}:")
-    print(f"Direction: {predictions_transformer['direction']}")
-    # print(f"Confidence: {predictions_transformer['direction_confidence']:.1f}%") # Confidence is not directly available
-    print(f"Predicted Price: ${predictions_transformer['predicted_price']:.2f}")
-    print(f"Price Range: ${predictions_transformer['price_range'][0]:.2f} - ${predictions_transformer['price_range'][1]:.2f}")
+    # predictor.train_models_transformer(X_transformer, y_transformer) # 訓練 Transformer 模型
+    # predictions_transformer = predictor.predict_next_day_transformer(sequence_length=30)
+    # print(f"\nTransformer Predictions for {ticker}:")
+    # print(f"Direction: {predictions_transformer['direction']}")
+    # # print(f"Confidence: {predictions_transformer['direction_confidence']:.1f}%") # Confidence is not directly available
+    # print(f"Predicted Price: ${predictions_transformer['predicted_price']:.2f}")
+    # print(f"Price Range: ${predictions_transformer['price_range'][0]:.2f} - ${predictions_transformer['price_range'][1]:.2f}")
 
-    # print(f"\nTechnical Analysis Predictions for {ticker}:")
-    # print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
-    # print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
-    # print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
+    print(f"\nTechnical Analysis Predictions for {ticker}:")
+    print(f"Direction: {predictions['direction']} (Confidence: {predictions['direction_confidence']:.1f}%)")
+    print(f"Predicted Price: ${predictions['predicted_price']:.2f}")
+    print(f"Price Range: ${predictions['price_range'][0]:.2f} - ${predictions['price_range'][1]:.2f}")
 
     print("\nCalculating DCF Valuation...")
     dcf = DCFValuation(ticker)
