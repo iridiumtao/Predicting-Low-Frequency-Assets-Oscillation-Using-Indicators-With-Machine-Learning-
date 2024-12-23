@@ -9,6 +9,7 @@ from keras.api.models import Sequential
 from keras.api.layers import LSTM, Dropout, Dense, Input
 from keras.api.models import Model
 from keras.api.optimizers import Adam
+from keras.api.models import load_model
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -16,6 +17,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
 from datetime import datetime, timedelta
 from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
+from joblib import dump, load
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -30,6 +32,8 @@ class StockPredictor:
         create_directory(self.data_dir)  # Create directory if it does not exist
         self.classification_model = None
         self.regression_model = None
+        self.lstm_model = None
+        self.scaler = None
 
     def fetch_historical_data(self):
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
@@ -162,6 +166,19 @@ class StockPredictor:
         return self.classification_model, self.regression_model
 
     def train_models_LSTM(self, features):
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.hdf5")
+        scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
+
+        if os.path.exists(model_path) and os.path.exists(scaler_path):
+            print(f"Loading model from {self.data_dir} for {self.stock_ticker}")
+            # self.lstm_model = self._build_model(features)
+            self.lstm_model = load_model(model_path)
+            self.scaler = load(scaler_path)
+        else:
+            print(f"Training the model for {self.stock_ticker}")
+            self._train_models_LSTM(features)
+
+    def _train_models_LSTM(self, features):
         print("Training Multi-Task LSTM Model")
 
         X = self.data[features]
@@ -179,18 +196,7 @@ class StockPredictor:
         X_test_reshaped = np.expand_dims(X_test_scaled, axis=1)
 
         # build model
-        inputs = Input(shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2]))
-
-        x = LSTM(50, activation='relu', return_sequences=True)(inputs)
-        x = Dropout(0.2)(x)
-        x = LSTM(50, activation='relu')(x)
-        x = Dropout(0.2)(x)
-
-        classification_output = Dense(1, activation='sigmoid', name='classification')(x)
-
-        regression_output = Dense(1, name='regression')(x)
-
-        model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        model = self._build_model(shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2]))
 
         model.compile(
             optimizer=Adam(learning_rate=0.001),
@@ -217,15 +223,39 @@ class StockPredictor:
         results = model.evaluate(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test})
         print("Evaluation Results:", results)
 
-        self.multi_task_model = model
+        self.lstm_model = model
+        model_path = os.path.join(self.data_dir, f"{self.stock_ticker}_model.hdf5")
+        scaler_path = os.path.join(self.data_dir, f"{self.stock_ticker}_scaler.joblib")
+        self.lstm_model.save(model_path)
         self.scaler = scaler
+        dump(self.scaler, scaler_path)
+
+
+    def _build_model(self, shape):
+
+        inputs = Input(shape=shape)
+
+
+        x = LSTM(64, activation='relu', return_sequences=True)(inputs)
+        x = Dropout(0.2)(x)
+        x = LSTM(64, activation='relu', return_sequences=True)(x)
+        x = Dropout(0.2)(x)
+        x = LSTM(64, activation='relu')(x)
+        x = Dropout(0.2)(x)
+
+        classification_output = Dense(1, activation='sigmoid', name='classification')(x)
+
+        regression_output = Dense(1, name='regression')(x)
+
+        model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        return model
 
     def predict_next_day_LSTM(self, features):
         latest_data = self.data[features].iloc[-1:]
         latest_scaled = self.scaler.transform(latest_data)
         latest_reshaped = np.expand_dims(latest_scaled, axis=1)
 
-        classification_pred, regression_pred = self.multi_task_model.predict(latest_reshaped)
+        classification_pred, regression_pred = self.lstm_model.predict(latest_reshaped)
 
         predicted_direction = "Up" if classification_pred[0][0] > 0.5 else "Down"
         confidence = classification_pred[0][0] * 100 if predicted_direction == "Up" else (1 - classification_pred[0][
