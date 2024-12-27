@@ -1,27 +1,41 @@
-import os
-import yfinance as yf
-import pandas as pd
-import numpy as np
-from ta.volatility import BollingerBands
-from ta.momentum import RSIIndicator
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
-from sklearn.preprocessing import MinMaxScaler
-from keras.api.models import Sequential, Model, load_model
-from keras.api.layers import LSTM, Dense, Dropout, Conv1D, Flatten, Input, MultiHeadAttention, LayerNormalization, Add, GlobalAveragePooling1D, RepeatVector
-from keras.api.optimizers import Adam
-from keras.api.callbacks import ModelCheckpoint
-from keras.api.saving import register_keras_serializable
+# Source Code References
+# 1. Stock Price Prediction Using Transformers
+#    Author: Mattafrank
+#    Date: May 5, 2024
+#    URL: https://medium.com/@Matthew_Frank/stock-price-prediction-using-transformers-2d84341ff213
+#
+# 2. Stock Price Prediction with Machine Learning Models
+#    Author: Neslişah Çelek
+#    Date: Jan 31, 2024
+#    URL: https://github.com/neslisahcelek/algorithmic-trading-with-ml/blob/main/src/model_utils.py
 
-import tensorflow as tf
+
 import math
+import os
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import yfinance as yf
 from joblib import dump, load
+from keras.api.callbacks import ModelCheckpoint
+from keras.api.layers import LSTM, Dense, Dropout, Conv1D, Flatten, Input, MultiHeadAttention, LayerNormalization, Add, \
+    GlobalAveragePooling1D, RepeatVector
+from keras.api.models import Model, load_model
+from keras.api.optimizers import Adam
+from keras.api.saving import register_keras_serializable
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
 
 from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
 
 pd.set_option('future.no_silent_downcasting', True)
+
 
 class StockPredictor:
     def __init__(self, stock_ticker, period="5y", data_dir: str = './data/raw_data', model_dir: str = './saved_models'):
@@ -119,8 +133,11 @@ class StockPredictor:
         self.data = self.data.dropna()
         return self.data, features
 
-
+    # Reference: Mattafrank (2024) [4]
     def prepare_features_transformer(self, sequence_length=30):
+        """
+        Modified from Mattafrank's implementation [4].
+        """
         self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
         self.data['Next_Close'] = self.data['Close'].shift(-1)
 
@@ -143,12 +160,16 @@ class StockPredictor:
         feature_data_scaled = self.transformer_scaler.fit_transform(feature_data)
 
         X, y = [], []
-        for i in range(len(self.data) - sequence_length -1):
+        for i in range(len(self.data) - sequence_length - 1):
             X.append(feature_data_scaled[i:i + sequence_length])
             y.append(target_data[i + sequence_length])
 
         X = np.array(X)
         y = np.array(y)
+
+        """
+        End of Modified from Mattafrank's implementation [4].
+        """
 
         return self.data, features, X, y
 
@@ -203,6 +224,9 @@ class StockPredictor:
         return self.classification_model, self.regression_model
 
     def train_models_LSTM(self, features):
+        """
+        Decide to load trained model or train model, developed by Chun-Ju Tao.
+        """
         model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_model.keras")
         scaler_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_scaler.joblib")
 
@@ -214,9 +238,13 @@ class StockPredictor:
             print(f"Training the LSTM model for {self.stock_ticker}")
             self._train_models_LSTM(features)
 
+    # Reference: Neslişah Çelek's (2024) [1]
     def _train_models_LSTM(self, features):
         print("Training Multi-Task LSTM Model")
 
+        """
+        Modified and copied from Neslişah Çelek's implementation [1]
+        """
         X = self.data[features]
         y_class = (self.data['Next_Close'] > self.data['Close']).astype(int)
         y_reg = self.data['Next_Close']
@@ -254,6 +282,9 @@ class StockPredictor:
             batch_size=32,
             verbose=1
         )
+        """
+        End of Modified and copied from Neslişah Çelek's implementation [1]
+        """
 
         # model evaluation
         results = model.evaluate(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test})
@@ -266,7 +297,18 @@ class StockPredictor:
         self.scaler = scaler
         dump(self.scaler, scaler_path)
 
+    # Reference: Neslişah Çelek (2024) [1]
     def _build_model(self, shape):
+        """
+        Build a CNN-LSTM model for stock price prediction.
+        Copied and modified from Neslişah Çelek's implementation [1]
+
+        Parameters:
+        shape (tuple): Shape of the input data.
+
+        Returns:
+        keras.Model: Compiled CNN-LSTM model.
+        """
         inputs = Input(shape=shape)
 
         # CNN
@@ -276,6 +318,10 @@ class StockPredictor:
         # Flatten CNN
         x = Flatten()(x)
         x = RepeatVector(shape[0])(x)
+
+        """
+        Modified from Neslişah Çelek's implementation [1].
+        """
 
         # LSTM
         x = LSTM(64, activation='relu', return_sequences=True)(x)
@@ -287,6 +333,10 @@ class StockPredictor:
         classification_output = Dense(1, activation='sigmoid', name='classification')(x)
         regression_output = Dense(1, name='regression')(x)
 
+        """
+        End of Copied and modified from Neslişah Çelek's implementation [1].
+        """
+
         model = Model(inputs=inputs, outputs=[classification_output, regression_output])
         print(model.summary())
         return model
@@ -296,7 +346,8 @@ class StockPredictor:
 
         if os.path.exists(model_path):
             print(f"Loading Transformer model from {self.model_dir} for {self.stock_ticker}")
-            self.transformer_model = load_model(model_path, custom_objects={'custom_mae_loss': self._custom_mae_loss, 'dir_acc': self._dir_acc})
+            self.transformer_model = load_model(model_path, custom_objects={'custom_mae_loss': self._custom_mae_loss,
+                                                                            'dir_acc': self._dir_acc})
         else:
             print(f"Training the Transformer model for {self.stock_ticker}")
             self._train_transformer(X, y)
@@ -336,7 +387,8 @@ class StockPredictor:
         dropout = 0.20
 
         # Build the model
-        self.transformer_model = self._build_transformer_model(input_shape, head_size, num_heads, ff_dim, num_layers, dropout)
+        self.transformer_model = self._build_transformer_model(input_shape, head_size, num_heads, ff_dim, num_layers,
+                                                               dropout)
         self.transformer_model.summary()
 
         # Compile the model
@@ -363,11 +415,12 @@ class StockPredictor:
         BATCH_SIZE = 64
         EPOCHS = 50
         self.transformer_model.fit(train_sequences, train_labels,
-                                  validation_data=(validation_sequences, validation_labels),
-                                  epochs=EPOCHS,
-                                  batch_size=BATCH_SIZE,
-                                  shuffle=True,
-                                  callbacks=[checkpoint_callback_train, checkpoint_callback_val, self._get_lr_callback(batch_size=BATCH_SIZE, epochs=EPOCHS)])
+                                   validation_data=(validation_sequences, validation_labels),
+                                   epochs=EPOCHS,
+                                   batch_size=BATCH_SIZE,
+                                   shuffle=True,
+                                   callbacks=[checkpoint_callback_train, checkpoint_callback_val,
+                                              self._get_lr_callback(batch_size=BATCH_SIZE, epochs=EPOCHS)])
 
         # Save the entire model
         self.transformer_model.save(os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_model.keras"))
@@ -540,7 +593,7 @@ class StockPredictor:
 
         # Determine direction (this is a simplification, as the transformer directly predicts price)
         predicted_direction = "Up" if predicted_price > self.data['Close'].iloc[-1] else "Down"
-        confidence = None # Confidence is harder to derive directly from a regression transformer
+        confidence = None  # Confidence is harder to derive directly from a regression transformer
 
         return {
             'direction': predicted_direction,
@@ -552,4 +605,3 @@ class StockPredictor:
     def _r2_score(self, y_true, y_pred):
         from sklearn.metrics import r2_score
         return r2_score(y_true, y_pred)
-
