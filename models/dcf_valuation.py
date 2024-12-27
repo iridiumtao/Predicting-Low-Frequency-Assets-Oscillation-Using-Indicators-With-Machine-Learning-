@@ -11,16 +11,21 @@ pd.set_option('future.no_silent_downcasting', True)
 
 class DCFValuation:
     def __init__(self, ticker, data_dir: str = 'data/raw_data'):
+        #ticker
         self.ticker = ticker
+        #getting the stock
         self.stock = yf.Ticker(ticker)
+        #director
         self.data_dir = data_dir
         create_directory(self.data_dir)  # Create directory if it does not exist
 
     def fetch_financial_data(self):
+        #file
         file_path = os.path.join(self.data_dir, f'{self.ticker}_financial_data.pkl')
 
         # load from cache
         if os.path.exists(file_path):
+            #getting the data
             try:
                 with open(file_path, 'rb') as f:
                     cached_data = pickle.load(f)
@@ -30,6 +35,7 @@ class DCFValuation:
                 print(f"Error loading cached DCF data: {str(e)}")
 
         try:
+            # the basics for DCF
             cf = self.stock.cash_flow
             bs = self.stock.balance_sheet
             is_ = self.stock.income_stmt
@@ -50,6 +56,7 @@ class DCFValuation:
 
     def calculate_fcf_historical(self, cf, bs):
         try:
+            #the free cash flow which is usually on the fiscal earning
             operating_cash_flow = cf.loc['Operating Cash Flow']
             capex = cf.loc['Capital Expenditure'].abs()
             fcf = operating_cash_flow - capex
@@ -58,6 +65,7 @@ class DCFValuation:
             raise Exception(f"Error calculating historical FCF: {str(e)}")
 
     def calculate_growth_rates(self, fcf_historical):
+        #fourmla from investopidia
         growth_rates = fcf_historical.ffill().pct_change()  # Corrected line
         avg_growth_rate = growth_rates.mean()
 
@@ -70,6 +78,7 @@ class DCFValuation:
         return growth_rate, terminal_growth
 
     def calculate_wacc(self, is_, bs):
+        #calculating the weighted average cost of capital
         try:
             risk_free_rate = 0.0425
             market_risk_premium = 0.06
@@ -103,6 +112,7 @@ class DCFValuation:
             return 0.1  # Return a default WACC if there's an error
 
     def project_fcf(self, last_fcf, growth_rate, terminal_growth, periods=5):
+        #this could have been taking through an api but we wanted to do it this way
         fcf_projections = []
         current_fcf = last_fcf
 
@@ -115,6 +125,7 @@ class DCFValuation:
         return fcf_projections, terminal_value
 
     def calculate_intrinsic_value(self):
+        #the intrinsic value is to give the trader a wider view
         try:
             cf, bs, is_ = self.fetch_financial_data()
 

@@ -24,6 +24,7 @@ from data.utils import create_directory, check_if_file_exists, load_data_from_cs
 pd.set_option('future.no_silent_downcasting', True)
 
 class StockPredictor:
+    #this is the technical analysis part where we use indicators
     def __init__(self, stock_ticker, period="5y", data_dir: str = './data/raw_data', model_dir: str = './saved_models'):
         self.stock_ticker = stock_ticker
         self.period = period
@@ -40,6 +41,7 @@ class StockPredictor:
         self.transformer_scaler: MinMaxScaler = None  # For Transformer specific scaling
 
     def fetch_historical_data(self):
+        #getting data
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
         if check_if_file_exists(file_path):
             print(f"Loading cached data for {self.stock_ticker} from {file_path}")
@@ -58,6 +60,8 @@ class StockPredictor:
                 raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
 
     def calculate_technical_indicators(self):
+        # we use more than one indicator to catch the diffrent anamolies
+        #we have hand picked each of these indicators based on their success rate
         try:
             bb = BollingerBands(close=self.data['Close'], window=20, window_dev=2)
             self.data['BB_upper'] = bb.bollinger_hband()
@@ -84,6 +88,7 @@ class StockPredictor:
             raise Exception(f"Error calculating technical indicators: {str(e)}")
 
     def calculate_adx(self, period=14):
+        #this is the indicator for the average directional which basically we would use to guess the direction
         high = self.data['High']
         low = self.data['Low']
         close = self.data['Close']
