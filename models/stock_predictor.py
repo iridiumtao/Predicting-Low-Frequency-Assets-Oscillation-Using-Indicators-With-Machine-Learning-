@@ -1,24 +1,27 @@
 import os
-
-import numpy as np
-import pandas as pd
 import yfinance as yf
-from joblib import dump, load
-from keras.api.layers import LSTM, Dropout, Dense, Input
-from keras.api.models import Model
-from keras.api.models import load_model
-from keras.api.optimizers import Adam
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from ta.momentum import RSIIndicator
+import pandas as pd
+import numpy as np
 from ta.volatility import BollingerBands
+from ta.momentum import RSIIndicator
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+from keras.api.models import Sequential, Model, load_model
+from keras.api.layers import LSTM, Dense, Dropout, Conv1D, Flatten, Input, MultiHeadAttention, LayerNormalization, Add, GlobalAveragePooling1D, RepeatVector
+from keras.api.optimizers import Adam
+from keras.api.callbacks import ModelCheckpoint
+from keras.api.saving import register_keras_serializable
+
+import tensorflow as tf
+import math
+import matplotlib.pyplot as plt
+from joblib import dump, load
 
 from data.utils import create_directory, check_if_file_exists, load_data_from_csv, save_data_to_csv
 
 pd.set_option('future.no_silent_downcasting', True)
-
 
 class StockPredictor:
     def __init__(self, stock_ticker, period="5y", data_dir: str = './data/raw_data', model_dir: str = './saved_models'):
@@ -32,7 +35,9 @@ class StockPredictor:
         self.classification_model = None
         self.regression_model = None
         self.lstm_model = None
+        self.transformer_model = None
         self.scaler = None
+        self.transformer_scaler: MinMaxScaler = None  # For Transformer specific scaling
 
     def fetch_historical_data(self):
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
@@ -112,9 +117,40 @@ class StockPredictor:
         ]
 
         self.data = self.data.dropna()
+        return self.data, features
+
+
+    def prepare_features_transformer(self, sequence_length=30):
+        self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
+        self.data['Next_Close'] = self.data['Close'].shift(-1)
+
+        features = [
+            'Close', 'RSI', 'BB_width', 'Volume_Ratio', 'Return_Volatility',
+            '20_SMA', '50_SMA', '200_SMA', '20_EMA', '50_EMA', '200_EMA',
+            'ADX', 'Daily_Return'
+        ]
+
+        self.data = self.data.dropna()
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}_with_indicators.csv')
         save_data_to_csv(self.data, file_path)
-        return self.data, features
+
+        # Prepare sequences for Transformer
+        feature_data = self.data[features].values
+        target_data = self.data['Next_Close'].values.reshape(-1, 1)
+
+        # Scale features and target separately for Transformer
+        self.transformer_scaler = MinMaxScaler()
+        feature_data_scaled = self.transformer_scaler.fit_transform(feature_data)
+
+        X, y = [], []
+        for i in range(len(self.data) - sequence_length -1):
+            X.append(feature_data_scaled[i:i + sequence_length])
+            y.append(target_data[i + sequence_length])
+
+        X = np.array(X)
+        y = np.array(y)
+
+        return self.data, features, X, y
 
     def train_models_random_forest(self, features):
         """
@@ -167,16 +203,15 @@ class StockPredictor:
         return self.classification_model, self.regression_model
 
     def train_models_LSTM(self, features):
-        model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_model.keras")
-        scaler_path = os.path.join(self.model_dir, f"{self.stock_ticker}_scaler.joblib")
+        model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_model.keras")
+        scaler_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_scaler.joblib")
 
         if os.path.exists(model_path) and os.path.exists(scaler_path):
-            print(f"Loading model from {self.model_dir} for {self.stock_ticker}")
-            # self.lstm_model = self._build_model(features)
+            print(f"Loading LSTM model from {self.model_dir} for {self.stock_ticker}")
             self.lstm_model = load_model(model_path)
             self.scaler = load(scaler_path)
         else:
-            print(f"Training the model for {self.stock_ticker}")
+            print(f"Training the LSTM model for {self.stock_ticker}")
             self._train_models_LSTM(features)
 
     def _train_models_LSTM(self, features):
@@ -225,29 +260,207 @@ class StockPredictor:
         print("Evaluation Results:", results)
 
         self.lstm_model = model
-        model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_model.keras")
-        scaler_path = os.path.join(self.model_dir, f"{self.stock_ticker}_scaler.joblib")
+        model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_model.keras")
+        scaler_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_scaler.joblib")
         self.lstm_model.save(model_path)
         self.scaler = scaler
         dump(self.scaler, scaler_path)
 
     def _build_model(self, shape):
-
         inputs = Input(shape=shape)
 
-        x = LSTM(64, activation='relu', return_sequences=True)(inputs)
-        x = Dropout(0.2)(x)
+        # CNN
+        x = Conv1D(filters=64, kernel_size=1, activation='relu', padding='same')(inputs)
+        x = Conv1D(filters=128, kernel_size=1, activation='relu', padding='same')(x)
+
+        # Flatten CNN
+        x = Flatten()(x)
+        x = RepeatVector(shape[0])(x)
+
+        # LSTM
         x = LSTM(64, activation='relu', return_sequences=True)(x)
         x = Dropout(0.2)(x)
         x = LSTM(64, activation='relu')(x)
         x = Dropout(0.2)(x)
 
+        # output layer
         classification_output = Dense(1, activation='sigmoid', name='classification')(x)
-
         regression_output = Dense(1, name='regression')(x)
 
         model = Model(inputs=inputs, outputs=[classification_output, regression_output])
+        print(model.summary())
         return model
+
+    def train_models_transformer(self, X, y):
+        model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_model.keras")
+
+        if os.path.exists(model_path):
+            print(f"Loading Transformer model from {self.model_dir} for {self.stock_ticker}")
+            self.transformer_model = load_model(model_path, custom_objects={'custom_mae_loss': self._custom_mae_loss, 'dir_acc': self._dir_acc})
+        else:
+            print(f"Training the Transformer model for {self.stock_ticker}")
+            self._train_transformer(X, y)
+
+    def _train_transformer(self, all_sequences, all_labels):
+        np.random.seed(42)
+        shuffled_indices = np.random.permutation(len(all_sequences))
+        all_sequences = all_sequences[shuffled_indices]
+        all_labels = all_labels[shuffled_indices]
+
+        train_size = int(len(all_sequences) * 0.9)
+
+        train_sequences = all_sequences[:train_size]
+        train_labels = all_labels[:train_size]
+
+        other_sequences = all_sequences[train_size:]
+        other_labels = all_labels[train_size:]
+
+        shuffled_indices = np.random.permutation(len(other_sequences))
+        other_sequences = other_sequences[shuffled_indices]
+        other_labels = other_labels[shuffled_indices]
+
+        val_size = int(len(other_sequences) * 0.5)
+
+        validation_sequences = other_sequences[:val_size]
+        validation_labels = other_labels[:val_size]
+
+        test_sequences = other_sequences[val_size:]
+        test_labels = other_labels[val_size:]
+
+        # Model parameters
+        input_shape = train_sequences.shape[1:]
+        head_size = 256
+        num_heads = 16
+        ff_dim = 1024
+        num_layers = 12
+        dropout = 0.20
+
+        # Build the model
+        self.transformer_model = self._build_transformer_model(input_shape, head_size, num_heads, ff_dim, num_layers, dropout)
+        self.transformer_model.summary()
+
+        # Compile the model
+        optimizer = Adam()
+        self.transformer_model.compile(optimizer=optimizer, loss=self._custom_mae_loss, metrics=[self._dir_acc])
+
+        # Define callbacks
+        checkpoint_callback_train = ModelCheckpoint(
+            os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_train_model.keras"),
+            monitor="dir_acc",
+            save_best_only=True,
+            mode="max",
+            verbose=1
+        )
+
+        checkpoint_callback_val = ModelCheckpoint(
+            os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_val_model.keras"),
+            monitor="val_dir_acc",
+            save_best_only=True,
+            mode="max",
+            verbose=1
+        )
+
+        BATCH_SIZE = 64
+        EPOCHS = 50
+        self.transformer_model.fit(train_sequences, train_labels,
+                                  validation_data=(validation_sequences, validation_labels),
+                                  epochs=EPOCHS,
+                                  batch_size=BATCH_SIZE,
+                                  shuffle=True,
+                                  callbacks=[checkpoint_callback_train, checkpoint_callback_val, self._get_lr_callback(batch_size=BATCH_SIZE, epochs=EPOCHS)])
+
+        # Save the entire model
+        self.transformer_model.save(os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_model.keras"))
+
+        # Evaluate
+        accuracy = self.transformer_model.evaluate(test_sequences, test_labels)[1]
+        print(f"\nTransformer Model Accuracy on Test Data: {accuracy}")
+
+        predictions = self.transformer_model.predict(test_sequences)
+        r2 = self._r2_score(test_labels, predictions[:, 0])
+        print(f"Transformer Model R-squared on Test Data: {r2}")
+
+    def _transformer_encoder(self, inputs, head_size, num_heads, ff_dim, dropout=0):
+        # Attention and Normalization
+        x = LayerNormalization(epsilon=1e-6)(inputs)
+        x = MultiHeadAttention(key_dim=head_size, num_heads=num_heads, dropout=dropout)(x, x)
+        x = Add()([x, inputs])
+
+        # Feed Forward Part
+        y = LayerNormalization(epsilon=1e-6)(x)
+        y = Dense(ff_dim, activation="relu")(y)
+        y = Dropout(dropout)(y)
+        y = Dense(inputs.shape[-1])(y)
+        return Add()([y, x])
+
+    def _build_transformer_model(self, input_shape, head_size, num_heads, ff_dim, num_layers, dropout=0):
+        inputs = Input(shape=input_shape)
+        x = inputs
+
+        # Create multiple layers of the Transformer block
+        for _ in range(num_layers):
+            x = self._transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
+
+        # Final part of the model
+        x = GlobalAveragePooling1D()(x)
+        x = LayerNormalization(epsilon=1e-6)(x)
+        outputs = Dense(1, activation="linear")(x)  # Regression task
+
+        # Build model
+        model = Model(inputs=inputs, outputs=outputs)
+        return model
+
+    @register_keras_serializable()
+    def _custom_mae_loss(self, y_true, y_pred):
+        y_true_next = tf.cast(y_true[:, 0], tf.float64)
+        y_pred_next = tf.cast(y_pred[:, 0], tf.float64)
+        abs_error = tf.abs(y_true_next - y_pred_next)
+        return tf.reduce_mean(abs_error)
+
+    @register_keras_serializable()
+    def _dir_acc(self, y_true, y_pred):
+
+        print(y_true.shape, y_true, type(y_true))
+        # Get current closing prices
+        current_close_prices = self.data['Close'].iloc[-(y_true.shape[1] + 1):-1].values
+        current_close_tensor = tf.cast(current_close_prices, tf.float64)
+
+        y_true_next = tf.cast(y_true[:, 0], tf.float64)
+        y_pred_next = tf.cast(y_pred[:, 0], tf.float64)
+
+        true_change = y_true_next - current_close_tensor
+        pred_change = y_pred_next - current_close_tensor
+
+        correct_direction = tf.equal(tf.sign(true_change), tf.sign(pred_change))
+        return tf.reduce_mean(tf.cast(correct_direction, tf.float64))
+
+    def _get_lr_callback(self, batch_size=16, mode='cos', epochs=500, plot=False):
+        lr_start, lr_max, lr_min = 0.0001, 0.005, 0.00001
+        lr_ramp_ep = int(0.30 * epochs)
+        lr_sus_ep = max(0, int(0.10 * epochs) - lr_ramp_ep)
+
+        def lrfn(epoch):
+            if epoch < lr_ramp_ep:
+                lr = (lr_max - lr_start) / lr_ramp_ep * epoch + lr_start
+            elif epoch < lr_ramp_ep + lr_sus_ep:
+                lr = lr_max
+            elif mode == 'cos':
+                decay_total_epochs, decay_epoch_index = epochs - lr_ramp_ep - lr_sus_ep, epoch - lr_ramp_ep - lr_sus_ep
+                phase = math.pi * decay_epoch_index / decay_total_epochs
+                lr = (lr_max - lr_min) * 0.5 * (1 + math.cos(phase)) + lr_min
+            else:
+                lr = lr_min
+            return lr
+
+        if plot:
+            plt.figure(figsize=(10, 5))
+            plt.plot(np.arange(epochs), [lrfn(epoch) for epoch in np.arange(epochs)], marker='o')
+            plt.xlabel('Epoch')
+            plt.ylabel('Learning Rate')
+            plt.title('Learning Rate Scheduler')
+            plt.show()
+
+        return tf.keras.callbacks.LearningRateScheduler(lrfn, verbose=True)
 
     def predict_next_day_LSTM(self, features):
         latest_data = self.data[features].iloc[-1:]
@@ -299,3 +512,44 @@ class StockPredictor:
             'predicted_price': predicted_price,
             'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
         }
+
+    def predict_next_day_transformer(self, sequence_length=30):
+        # Get the latest sequence of data
+        features = [
+            'Close', 'RSI', 'BB_width', 'Volume_Ratio', 'Return_Volatility',
+            '20_SMA', '50_SMA', '200_SMA', '20_EMA', '50_EMA', '200_EMA',
+            'ADX', 'Daily_Return'
+        ]
+        latest_data = self.data[features].iloc[-sequence_length:].values
+        latest_scaled = self.transformer_scaler.transform(latest_data)
+        latest_reshaped = np.expand_dims(latest_scaled, axis=0)  # Add batch dimension
+
+        # Make prediction
+        predicted_price_scaled = self.transformer_model.predict(latest_reshaped)[0][0]
+
+        # The transformer predicts the 'Next_Close' which was directly scaled.
+        # We need to inverse transform it. To do this, we need a dummy array
+        # with the same number of features as what the scaler was trained on.
+        dummy_array = np.zeros((1, len(features)))
+        close_index = features.index('Close')
+        dummy_array[0, close_index] = predicted_price_scaled
+        predicted_price = self.transformer_scaler.inverse_transform(dummy_array)[0][close_index]
+
+        # Calculate a rough price range (you might want a more sophisticated method)
+        price_uncertainty = np.std(self.data['Close'][-sequence_length:])
+
+        # Determine direction (this is a simplification, as the transformer directly predicts price)
+        predicted_direction = "Up" if predicted_price > self.data['Close'].iloc[-1] else "Down"
+        confidence = None # Confidence is harder to derive directly from a regression transformer
+
+        return {
+            'direction': predicted_direction,
+            'direction_confidence': confidence,
+            'predicted_price': predicted_price,
+            'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
+        }
+
+    def _r2_score(self, y_true, y_pred):
+        from sklearn.metrics import r2_score
+        return r2_score(y_true, y_pred)
+
