@@ -342,6 +342,9 @@ class StockPredictor:
         return model
 
     def train_models_transformer(self, X, y):
+        """
+        Decide to load trained model or train model, developed by Chun-Ju Tao.
+        """
         model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_transformer_model.keras")
 
         if os.path.exists(model_path):
@@ -352,7 +355,11 @@ class StockPredictor:
             print(f"Training the Transformer model for {self.stock_ticker}")
             self._train_transformer(X, y)
 
+    # Reference: Mattafrank (2024) [4]
     def _train_transformer(self, all_sequences, all_labels):
+        """
+        Copied from Mattafrank's implementation [4].
+        """
         np.random.seed(42)
         shuffled_indices = np.random.permutation(len(all_sequences))
         all_sequences = all_sequences[shuffled_indices]
@@ -433,7 +440,15 @@ class StockPredictor:
         r2 = self._r2_score(test_labels, predictions[:, 0])
         print(f"Transformer Model R-squared on Test Data: {r2}")
 
+        """
+        End of copied from Mattafrank's implementation [4].
+        """
+
+    # Reference: Mattafrank (2024) [4]
     def _transformer_encoder(self, inputs, head_size, num_heads, ff_dim, dropout=0):
+        """
+        Copied from Mattafrank's implementation [4].
+        """
         # Attention and Normalization
         x = LayerNormalization(epsilon=1e-6)(inputs)
         x = MultiHeadAttention(key_dim=head_size, num_heads=num_heads, dropout=dropout)(x, x)
@@ -446,7 +461,15 @@ class StockPredictor:
         y = Dense(inputs.shape[-1])(y)
         return Add()([y, x])
 
+        """
+        End of copied from Mattafrank's implementation [4].
+        """
+
+    # Reference: Mattafrank (2024) [4]
     def _build_transformer_model(self, input_shape, head_size, num_heads, ff_dim, num_layers, dropout=0):
+        """
+        Copied from Mattafrank's implementation [4].
+        """
         inputs = Input(shape=input_shape)
         x = inputs
 
@@ -463,16 +486,30 @@ class StockPredictor:
         model = Model(inputs=inputs, outputs=outputs)
         return model
 
+        """
+        End of copied from Mattafrank's implementation [4].
+        """
+
+    # Reference: Mattafrank (2024) [4]
     @register_keras_serializable()
     def _custom_mae_loss(self, y_true, y_pred):
+        """
+        Copied from Mattafrank's implementation [4].
+        """
         y_true_next = tf.cast(y_true[:, 0], tf.float64)
         y_pred_next = tf.cast(y_pred[:, 0], tf.float64)
         abs_error = tf.abs(y_true_next - y_pred_next)
         return tf.reduce_mean(abs_error)
+        """
+        End of copied from Mattafrank's implementation [4].
+        """
 
+    # Reference: Mattafrank (2024) [4]
     @register_keras_serializable()
     def _dir_acc(self, y_true, y_pred):
-
+        """
+        Copied and modified from Mattafrank's implementation [4].
+        """
         print(y_true.shape, y_true, type(y_true))
         # Get current closing prices
         current_close_prices = self.data['Close'].iloc[-(y_true.shape[1] + 1):-1].values
@@ -486,8 +523,15 @@ class StockPredictor:
 
         correct_direction = tf.equal(tf.sign(true_change), tf.sign(pred_change))
         return tf.reduce_mean(tf.cast(correct_direction, tf.float64))
+        """
+        End of copied and modified from Mattafrank's implementation [4].
+        """
 
+    # Reference: Mattafrank (2024) [4]
     def _get_lr_callback(self, batch_size=16, mode='cos', epochs=500, plot=False):
+        """
+        Copied from Mattafrank's implementation [4].
+        """
         lr_start, lr_max, lr_min = 0.0001, 0.005, 0.00001
         lr_ramp_ep = int(0.30 * epochs)
         lr_sus_ep = max(0, int(0.10 * epochs) - lr_ramp_ep)
@@ -514,6 +558,9 @@ class StockPredictor:
             plt.show()
 
         return tf.keras.callbacks.LearningRateScheduler(lrfn, verbose=True)
+        """
+        End of copied from Mattafrank's implementation [4].
+        """
 
     def predict_next_day_LSTM(self, features):
         latest_data = self.data[features].iloc[-1:]
@@ -566,7 +613,12 @@ class StockPredictor:
             'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
         }
 
+    # Reference: Neslişah Çelek's [1], Mattafrank (2024) [4]
     def predict_next_day_transformer(self, sequence_length=30):
+        """
+        Copied and modified from Mattafrank's implementation [4].
+        Copied and modified from Neslişah Çelek's implementation [1].
+        """
         # Get the latest sequence of data
         features = [
             'Close', 'RSI', 'BB_width', 'Volume_Ratio', 'Return_Volatility',
@@ -594,6 +646,11 @@ class StockPredictor:
         # Determine direction (this is a simplification, as the transformer directly predicts price)
         predicted_direction = "Up" if predicted_price > self.data['Close'].iloc[-1] else "Down"
         confidence = None  # Confidence is harder to derive directly from a regression transformer
+
+        """
+        End of copied and modified from Mattafrank's implementation [4].
+        End of copied and modified from Neslişah Çelek's implementation [1].
+        """
 
         return {
             'direction': predicted_direction,
