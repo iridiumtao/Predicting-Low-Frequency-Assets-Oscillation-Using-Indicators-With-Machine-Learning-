@@ -20,7 +20,6 @@
 #    URL: https://www.investopedia.com/terms/a/adx.asp
 
 
-
 import math
 import os
 
