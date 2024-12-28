@@ -1,3 +1,8 @@
+"""
+This module contains utility functions for data processing.
+Developed by Chun-Ju Tao with AI.
+"""
+
 import os
 import pandas as pd
 
