@@ -26,7 +26,7 @@ from keras.api.models import Model, load_model
 from keras.api.optimizers import Adam
 from keras.api.saving import register_keras_serializable
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error
+from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from ta.momentum import RSIIndicator
@@ -453,7 +453,7 @@ class StockPredictor:
         print(f"\nTransformer Model Accuracy on Test Data: {accuracy}")
 
         predictions = self.transformer_model.predict(test_sequences)
-        r2 = self._r2_score(test_labels, predictions[:, 0])
+        r2 = r2_score(test_labels, predictions[:, 0])
         print(f"Transformer Model R-squared on Test Data: {r2}")
 
         """
@@ -674,7 +674,3 @@ class StockPredictor:
             'predicted_price': predicted_price,
             'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
         }
-
-    def _r2_score(self, y_true, y_pred):
-        from sklearn.metrics import r2_score
-        return r2_score(y_true, y_pred)
