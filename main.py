@@ -7,6 +7,9 @@ pd.set_option('future.no_silent_downcasting', True)
 
 
 def main(ticker, model="random_forest"):
+    """
+    developed by Abdullah Alamri and Chun-Ju Tao.
+    """
     # if True:
     try:
         predictor = StockPredictor(ticker)
