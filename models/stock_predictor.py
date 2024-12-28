@@ -608,6 +608,9 @@ class StockPredictor:
         """
 
     def predict_next_day_LSTM(self, features):
+        """
+        Modified from Alamri's predict_next_day_rf() by Chun-Ju Tao.
+        """
         latest_data = self.data[features].iloc[-1:]
         latest_scaled = self.scaler.transform(latest_data)
         latest_reshaped = np.expand_dims(latest_scaled, axis=1)
