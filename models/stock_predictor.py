@@ -133,10 +133,10 @@ class StockPredictor:
         self.data = self.data.dropna()
         return self.data, features
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     def prepare_features_transformer(self, sequence_length=30):
         """
-        Modified from Mattafrank's implementation [4].
+        Modified from Mattafrank's implementation [1].
         """
         self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
         self.data['Next_Close'] = self.data['Close'].shift(-1)
@@ -168,7 +168,7 @@ class StockPredictor:
         y = np.array(y)
 
         """
-        End of Modified from Mattafrank's implementation [4].
+        End of Modified from Mattafrank's implementation [1].
         """
 
         return self.data, features, X, y
@@ -238,12 +238,12 @@ class StockPredictor:
             print(f"Training the LSTM model for {self.stock_ticker}")
             self._train_models_LSTM(features)
 
-    # Reference: Neslişah Çelek's (2024) [1]
+    # Reference: Neslişah Çelek's (2024) [2]
     def _train_models_LSTM(self, features):
         print("Training Multi-Task LSTM Model")
 
         """
-        Modified and copied from Neslişah Çelek's implementation [1]
+        Modified and copied from Neslişah Çelek's implementation [2]
         """
         X = self.data[features]
         y_class = (self.data['Next_Close'] > self.data['Close']).astype(int)
@@ -288,7 +288,7 @@ class StockPredictor:
         print("Evaluation Results:", results)
 
         """
-        End of Modified and copied from Neslişah Çelek's implementation [1]
+        End of Modified and copied from Neslişah Çelek's implementation [2]
         """
 
         """
@@ -306,11 +306,11 @@ class StockPredictor:
         End of Store model, developed by Chun-Ju Tao.
         """
 
-    # Reference: Neslişah Çelek (2024) [1]
+    # Reference: Neslişah Çelek (2024) [2]
     def _build_model(self, shape):
         """
         Build a CNN-LSTM model for stock price prediction.
-        Modified from Neslişah Çelek's implementation [1]
+        Modified from Neslişah Çelek's implementation [2]
 
         Parameters:
         shape (tuple): Shape of the input data.
@@ -336,7 +336,7 @@ class StockPredictor:
         """
 
         """
-        LSTM Layers and output layer, modified from Neslişah Çelek's implementation [1].
+        LSTM Layers and output layer, modified from Neslişah Çelek's implementation [2].
         """
 
         # LSTM
@@ -353,7 +353,7 @@ class StockPredictor:
         print(model.summary())
 
         """
-        End of LSTM Layers and output layer, modified from Neslişah Çelek's implementation [1].
+        End of LSTM Layers and output layer, modified from Neslişah Çelek's implementation [2].
         """
         return model
 
@@ -371,10 +371,10 @@ class StockPredictor:
             print(f"Training the Transformer model for {self.stock_ticker}")
             self._train_transformer(X, y)
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     def _train_transformer(self, all_sequences, all_labels):
         """
-        Copied from Mattafrank's implementation [4].
+        Copied from Mattafrank's implementation [1].
         """
         np.random.seed(42)
         shuffled_indices = np.random.permutation(len(all_sequences))
@@ -457,13 +457,13 @@ class StockPredictor:
         print(f"Transformer Model R-squared on Test Data: {r2}")
 
         """
-        End of copied from Mattafrank's implementation [4].
+        End of copied from Mattafrank's implementation [1].
         """
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     def _transformer_encoder(self, inputs, head_size, num_heads, ff_dim, dropout=0):
         """
-        Copied from Mattafrank's implementation [4].
+        Copied from Mattafrank's implementation [1].
         """
         # Attention and Normalization
         x = LayerNormalization(epsilon=1e-6)(inputs)
@@ -478,13 +478,13 @@ class StockPredictor:
         return Add()([y, x])
 
         """
-        End of copied from Mattafrank's implementation [4].
+        End of copied from Mattafrank's implementation [1].
         """
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     def _build_transformer_model(self, input_shape, head_size, num_heads, ff_dim, num_layers, dropout=0):
         """
-        Copied from Mattafrank's implementation [4].
+        Copied from Mattafrank's implementation [1].
         """
         inputs = Input(shape=input_shape)
         x = inputs
@@ -503,28 +503,28 @@ class StockPredictor:
         return model
 
         """
-        End of copied from Mattafrank's implementation [4].
+        End of copied from Mattafrank's implementation [1].
         """
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     @register_keras_serializable()
     def _custom_mae_loss(self, y_true, y_pred):
         """
-        Copied from Mattafrank's implementation [4].
+        Copied from Mattafrank's implementation [1].
         """
         y_true_next = tf.cast(y_true[:, 0], tf.float64)
         y_pred_next = tf.cast(y_pred[:, 0], tf.float64)
         abs_error = tf.abs(y_true_next - y_pred_next)
         return tf.reduce_mean(abs_error)
         """
-        End of copied from Mattafrank's implementation [4].
+        End of copied from Mattafrank's implementation [1].
         """
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     @register_keras_serializable()
     def _dir_acc(self, y_true, y_pred):
         """
-        Copied and modified from Mattafrank's implementation [4].
+        Copied and modified from Mattafrank's implementation [1].
         """
         print(y_true.shape, y_true, type(y_true))
         # Get current closing prices
@@ -540,13 +540,13 @@ class StockPredictor:
         correct_direction = tf.equal(tf.sign(true_change), tf.sign(pred_change))
         return tf.reduce_mean(tf.cast(correct_direction, tf.float64))
         """
-        End of copied and modified from Mattafrank's implementation [4].
+        End of copied and modified from Mattafrank's implementation [1].
         """
 
-    # Reference: Mattafrank (2024) [4]
+    # Reference: Mattafrank (2024) [1]
     def _get_lr_callback(self, batch_size=16, mode='cos', epochs=500, plot=False):
         """
-        Copied from Mattafrank's implementation [4].
+        Copied from Mattafrank's implementation [1].
         """
         lr_start, lr_max, lr_min = 0.0001, 0.005, 0.00001
         lr_ramp_ep = int(0.30 * epochs)
@@ -575,7 +575,7 @@ class StockPredictor:
 
         return tf.keras.callbacks.LearningRateScheduler(lrfn, verbose=True)
         """
-        End of copied from Mattafrank's implementation [4].
+        End of copied from Mattafrank's implementation [1].
         """
 
     def predict_next_day_LSTM(self, features):
@@ -629,11 +629,11 @@ class StockPredictor:
             'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
         }
 
-    # Reference: Neslişah Çelek's [1], Mattafrank (2024) [4]
+    # Reference: Neslişah Çelek's [2], Mattafrank (2024) [1]
     def predict_next_day_transformer(self, sequence_length=30):
         """
-        Copied and modified from Mattafrank's implementation [4].
-        Copied and modified from Neslişah Çelek's implementation [1].
+        Copied and modified from Mattafrank's implementation [1].
+        Copied and modified from Neslişah Çelek's implementation [2].
         """
         # Get the latest sequence of data
         features = [
@@ -664,8 +664,8 @@ class StockPredictor:
         confidence = None  # Confidence is harder to derive directly from a regression transformer
 
         """
-        End of copied and modified from Mattafrank's implementation [4].
-        End of copied and modified from Neslişah Çelek's implementation [1].
+        End of copied and modified from Mattafrank's implementation [1].
+        End of copied and modified from Neslişah Çelek's implementation [2].
         """
 
         return {
