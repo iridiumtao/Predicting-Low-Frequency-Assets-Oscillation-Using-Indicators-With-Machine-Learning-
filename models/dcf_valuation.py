@@ -8,6 +8,19 @@ from data.utils import create_directory
 
 pd.set_option('future.no_silent_downcasting', True)
 
+# Source Code References
+# 1. Discounted Cash Flow (DCF) explained with formula and examples
+#    Author: Fernando, J.
+#    Date: Sep 20, 2024
+#    URL: https://www.investopedia.com/terms/d/dcf.asp
+
+# This whole file was made by Alamri with some help of Ai
+# I have a lot of knowledge in Value investing and thus whole file is just trying to setup the traders view for
+# the longer term as a value investor while also having the technical indicator
+# This whole file is just get the fiscal earning and use the fourmlas
+# For further explanination please visit the refrence
+# Reference: Fernando, J. (2024) [1]
+
 
 class DCFValuation:
     def __init__(self, ticker, data_dir: str = 'data/raw_data'):

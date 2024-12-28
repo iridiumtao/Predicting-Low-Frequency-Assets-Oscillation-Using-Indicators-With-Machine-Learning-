@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="nyu-machine-learning-tf" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="nyu-machine-learning-tf" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (Project)" project-jdk-type="Python SDK" />
 </project>
