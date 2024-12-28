@@ -8,6 +8,17 @@
 #    Author: Neslişah Çelek
 #    Date: Jan 31, 2024
 #    URL: https://github.com/neslisahcelek/algorithmic-trading-with-ml/blob/main/src/model_utils.py
+#
+# 3. Feature selection and deep neural networks for stock price direction forecasting using technical analysis indicators. Machine Learning with Applications.
+#    Author: Peng, Y. H.
+#    Date: June 8, 2021
+#    URL: https://www.sciencedirect.com/science/article/pii/S266682702100030X 
+#
+# 4. Average Directional Index (ADX): Definition and Formula
+#    Author: Cory Michell
+#    Date: July 23, 2024
+#    URL: https://www.investopedia.com/terms/a/adx.asp
+
 
 
 import math
@@ -37,6 +48,8 @@ from data.utils import create_directory, check_if_file_exists, load_data_from_cs
 pd.set_option('future.no_silent_downcasting', True)
 
 
+# This block was made by Alamri with some help of Ai
+# This brings the stock ticker to be implemented
 class StockPredictor:
     def __init__(self, stock_ticker, period="5y", data_dir: str = './data/raw_data', model_dir: str = './saved_models'):
         self.stock_ticker = stock_ticker
@@ -53,6 +66,8 @@ class StockPredictor:
         self.scaler = None
         self.transformer_scaler: MinMaxScaler = None  # For Transformer specific scaling
 
+    # This block was made by Alamri and Chun-Ju Tao with some help of Ai
+    # basically what it does is get the historical data from the fiscal earnings reports
     def fetch_historical_data(self):
         file_path = os.path.join(self.data_dir, f'{self.stock_ticker}.csv')
         if check_if_file_exists(file_path):
@@ -71,6 +86,12 @@ class StockPredictor:
             except Exception as e:
                 raise Exception(f"Error fetching data for {self.stock_ticker}: {str(e)}")
 
+    # This block was made by Alamri with some help of Ai
+    # This first refernce helped with how to implement it
+    # Reference: Çelek (2024) [2]
+    # This second reference helped with our choice of which indicators to choose given that there are thousands of them
+    # I already have a background in the subject and so this research is to confirm my theory
+    # Reference: Peng, Y. H. (2021) [3]
     def calculate_technical_indicators(self):
         try:
             bb = BollingerBands(close=self.data['Close'], window=20, window_dev=2)
@@ -97,6 +118,10 @@ class StockPredictor:
         except Exception as e:
             raise Exception(f"Error calculating technical indicators: {str(e)}")
 
+    # This block was made by Alamri with some help of Ai
+    # This is the average directional index, the point of adding it is to have a guestemate on the direction
+    # The Next day, The refrence is an explaination of what it is from investopedia
+    # Reference: Mitchell (2024) [4]
     def calculate_adx(self, period=14):
         high = self.data['High']
         low = self.data['Low']
@@ -120,6 +145,9 @@ class StockPredictor:
 
         return adx
 
+    # This block was made by Alamri with some help of Ai
+    # This is part of the stream line for most financial models to clean out the technical indicators used
+    # Here as features
     def prepare_features(self):
         self.data['Direction'] = np.where(self.data['Close'].shift(-1) > self.data['Close'], 1, 0)
         self.data['Next_Close'] = self.data['Close'].shift(-1)
@@ -173,6 +201,8 @@ class StockPredictor:
 
         return self.data, features, X, y
 
+    # This block was made by Alamri with some help of Ai
+    # We were taught this in this class so I am simply implementing
     def train_models_random_forest(self, features):
         """
         Train Random Forest models for classification and regression.
@@ -584,7 +614,8 @@ class StockPredictor:
             'predicted_price': predicted_price,
             'price_range': (predicted_price - price_uncertainty, predicted_price + price_uncertainty)
         }
-
+    # This block was made by Alamri with some help of Ai
+    # This is the part where we get the results No refrences just trial and error and Ai
     def predict_next_day_rf(self, features):
         latest_data = self.data[features].iloc[-1:]
 
