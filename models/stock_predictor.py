@@ -282,13 +282,18 @@ class StockPredictor:
             batch_size=32,
             verbose=1
         )
-        """
-        End of Modified and copied from Neslişah Çelek's implementation [1]
-        """
 
         # model evaluation
         results = model.evaluate(X_test_reshaped, {'classification': y_class_test, 'regression': y_reg_test})
         print("Evaluation Results:", results)
+
+        """
+        End of Modified and copied from Neslişah Çelek's implementation [1]
+        """
+
+        """
+        Store model, developed by Chun-Ju Tao.
+        """
 
         self.lstm_model = model
         model_path = os.path.join(self.model_dir, f"{self.stock_ticker}_cnn_lstm_model.keras")
@@ -297,17 +302,24 @@ class StockPredictor:
         self.scaler = scaler
         dump(self.scaler, scaler_path)
 
+        """
+        End of Store model, developed by Chun-Ju Tao.
+        """
+
     # Reference: Neslişah Çelek (2024) [1]
     def _build_model(self, shape):
         """
         Build a CNN-LSTM model for stock price prediction.
-        Copied and modified from Neslişah Çelek's implementation [1]
+        Modified from Neslişah Çelek's implementation [1]
 
         Parameters:
         shape (tuple): Shape of the input data.
 
         Returns:
         keras.Model: Compiled CNN-LSTM model.
+        """
+        """
+        CNN layers, developed by Chun-Ju Tao.
         """
         inputs = Input(shape=shape)
 
@@ -320,7 +332,11 @@ class StockPredictor:
         x = RepeatVector(shape[0])(x)
 
         """
-        Modified from Neslişah Çelek's implementation [1].
+        End of CNN layers, developed by Chun-Ju Tao.
+        """
+
+        """
+        LSTM Layers and output layer, modified from Neslişah Çelek's implementation [1].
         """
 
         # LSTM
@@ -333,12 +349,12 @@ class StockPredictor:
         classification_output = Dense(1, activation='sigmoid', name='classification')(x)
         regression_output = Dense(1, name='regression')(x)
 
-        """
-        End of Copied and modified from Neslişah Çelek's implementation [1].
-        """
-
         model = Model(inputs=inputs, outputs=[classification_output, regression_output])
         print(model.summary())
+
+        """
+        End of LSTM Layers and output layer, modified from Neslişah Çelek's implementation [1].
+        """
         return model
 
     def train_models_transformer(self, X, y):
